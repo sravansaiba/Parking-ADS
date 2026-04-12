@@ -28,7 +28,7 @@ export interface ReportFilters {
   status: SessionStatus;
 }
 
-export type VehicleType = 'ALL' | 'Car' | 'Bike' | 'EV' | 'AUTO';
+export type VehicleType = 'ALL' | 'Car' | 'Bike' | 'EV' | 'Auto';
 export type PaymentType = 'ALL' | 'cash' | 'online';
 export type SessionStatus = 'ALL' | 'COMPLETED' | 'ACTIVE';
 
@@ -45,7 +45,7 @@ export interface VehicleBreakdown {
   Car: number;
   Bike: number;
   EV: number;
-  AUTO: number;
+  Auto: number;
 }
 
 export interface DailyRevenue {

@@ -82,18 +82,25 @@ export default function EndParkingForm({
 
   // ─── Auto-calculate price ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!user || !activeSession) return;
+    if (!user || !activeSession || !activeSession.vehicle_type) {
+      return;
+    }
     const calculate = async () => {
-      const start = new Date(activeSession.start_time).getTime();
-      const end = endTime.getTime();
-      const minutes = Math.max(Math.ceil((end - start) / 60000), 1);
-      const price = await pricingApi.calculatePrice(
-        user.tenant_id as string,
-        activeSession.vehicle_type,
-        minutes,
-      );
-      // ✅ Set as string — no conversion through Number()
-      setAmountStr(String(price));
+      try {
+        const start = new Date(activeSession.start_time).getTime();
+        const end = endTime.getTime();
+        const minutes = Math.max(Math.ceil((end - start) / 60000), 1);
+
+        const price = await pricingApi.calculatePrice(
+          user.tenant_id as string,
+          activeSession.vehicle_type,
+          minutes,
+        );
+
+        setAmountStr(String(price));
+      } catch (e) {
+        console.log("Price error:", e);
+      }
     };
     calculate();
   }, [activeSession, endTime, user]);

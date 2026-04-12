@@ -1,16 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import {
-  View,
-  StyleSheet,
-  Animated,
-  Dimensions,
-  Text,
-  Image,
-} from 'react-native';
+import { View, StyleSheet, Animated, Dimensions, Image } from 'react-native';
+import { Video, ResizeMode } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 interface SplashScreenProps {
   onFinish: () => void;
@@ -18,198 +11,186 @@ interface SplashScreenProps {
 
 export default function SplashScreen({ onFinish }: SplashScreenProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const carAnim = useRef(new Animated.Value(-200)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const shimmerAnim = useRef(new Animated.Value(0)).current;
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning ☀️';
-    if (hour < 18) return 'Good Afternoon 🌤️';
-    return 'Good Evening 🌙';
-  };
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const videoRef = useRef<Video>(null);
 
   useEffect(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 900,
-      useNativeDriver: true,
-    }).start();
-
-    Animated.timing(carAnim, {
-      toValue: 0,
-      duration: 1500,
-      useNativeDriver: true,
-    }).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 1200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1200,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    Animated.loop(
-      Animated.timing(shimmerAnim, {
+    // Animate logo entrance
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 1800,
+        duration: 1000,
         useNativeDriver: true,
-      })
-    ).start();
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
+    // Set timeout to navigate to login after splash duration
     const timer = setTimeout(() => {
       onFinish();
-    }, 3200);
+    }, 3000); // 3 seconds
 
     return () => clearTimeout(timer);
   }, []);
 
-  const shimmerX = shimmerAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-150, 300],
-  });
-
   return (
     <View style={styles.container}>
+      {/* Option 1: Background Video (uncomment to use) */}
+      {/* <Video
+        ref={videoRef}
+        source={require('../assets/splash-video.mp4')} // Add your video file
+        style={styles.video}
+        resizeMode={ResizeMode.COVER}
+        shouldPlay
+        isLooping={false}
+        isMuted
+        onPlaybackStatusUpdate={(status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            onFinish();
+          }
+        }}
+      /> */}
+
+      {/* Option 2: Gradient Background (currently active) */}
       <LinearGradient
-        colors={['#020617', '#0f172a', '#1e293b']}
+        colors={['#2d1810', '#1a0f0a']}
         style={styles.gradient}
       >
-        <Animated.Text style={[styles.greeting, { opacity: fadeAnim }]}>
-          {getGreeting()}
-        </Animated.Text>
-
+        {/* Animated Logo */}
         <Animated.View
           style={[
-            styles.glassCard,
+            styles.logoContainer,
             {
               opacity: fadeAnim,
-              transform: [{ scale: pulseAnim }],
+              transform: [{ scale: scaleAnim }],
             },
           ]}
         >
-          <Image
-            source={require('../assets/icon.png')}
-            style={styles.logo}
-          />
-          <Text style={styles.title}>RAVITEJA PARKING STAND</Text>
-          <Text style={styles.subtitle}>Smart Parking Solution</Text>
+          <View style={styles.logoBackground}>
+            <Image 
+              source={require('../assets/icon.png')} 
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </View>
         </Animated.View>
 
-        <View style={styles.roadContainer}>
-          <Animated.Text
-            style={[
-              styles.car,
-              { transform: [{ translateX: carAnim }] },
-            ]}
-          >
-            🚗
-          </Animated.Text>
-          <View style={styles.gate} />
-        </View>
+        {/* Animated App Name */}
+        <Animated.Text
+          style={[
+            styles.appName,
+            {
+              opacity: fadeAnim,
+            },
+          ]}
+        >
+          RAVITEJA PARKING STAND
+        </Animated.Text>
 
-        <View style={styles.loader}>
-          <Animated.View
-            style={[
-              styles.shimmer,
-              { transform: [{ translateX: shimmerX }] },
-            ]}
-          />
-        </View>
+        {/* Animated Tagline */}
+        <Animated.Text
+          style={[
+            styles.tagline,
+            {
+              opacity: fadeAnim,
+            },
+          ]}
+        >
+          Smart Parking Solution
+        </Animated.Text>
+
+        {/* Loading Indicator */}
+        <Animated.View
+          style={[
+            styles.loadingContainer,
+            {
+              opacity: fadeAnim,
+            },
+          ]}
+        >
+          <View style={styles.loadingBar}>
+            <LinearGradient
+              colors={['#f97316', '#ea580c']}
+              style={styles.loadingBarFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            />
+          </View>
+        </Animated.View>
       </LinearGradient>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-
+  container: {
+    flex: 1,
+  },
+  video: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: width,
+    height: height,
+  },
   gradient: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  greeting: {
-    position: 'absolute',
-    top: 80,
-    fontSize: 16,
-    color: '#94a3b8',
+  logoContainer: {
+    marginBottom: 32,
   },
-
-  glassCard: {
-    width: width * 0.8,
-    padding: 20,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-  },
-
-  logo: {
-    width: 80,
-    height: 80,
-    marginBottom: 10,
-  },
-
-  title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#ffffff',
-    textAlign: 'center',
-  },
-
-  subtitle: {
-    fontSize: 13,
-    color: '#94a3b8',
-    marginTop: 4,
-  },
-
-  roadContainer: {
-    position: 'absolute',
-    bottom: 140,
-    width: width * 0.7,
-    height: 40,
+  logoBackground: {
+    width: 160,
+    height: 160,
+    borderRadius: 35,
+    backgroundColor: '#fff',
     justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#f97316',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 12,
   },
-
-  car: {
-    fontSize: 28,
+  logoImage: {
+    width: 130,
+    height: 130,
   },
-
-  gate: {
-    position: 'absolute',
-    right: 0,
-    width: 6,
-    height: 30,
-    backgroundColor: '#f97316',
-    borderRadius: 3,
+  appName: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 12,
+    letterSpacing: 0.8,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
-
-  loader: {
+  tagline: {
+    fontSize: 16,
+    color: '#d4a574',
+    fontWeight: '500',
+  },
+  loadingContainer: {
     position: 'absolute',
     bottom: 80,
     width: width * 0.5,
-    height: 3,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    overflow: 'hidden',
-    borderRadius: 2,
   },
-
-  shimmer: {
-    width: 120,
+  loadingBar: {
+    width: '100%',
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  loadingBarFill: {
+    width: '70%',
     height: '100%',
-    backgroundColor: '#f97316',
   },
 });

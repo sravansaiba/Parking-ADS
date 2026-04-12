@@ -18,6 +18,7 @@ import { PricingStackParamList } from '../../../app/navigation/PricingStack';
 import { VehicleType, usePricingStore } from '../pricingStore';
 import ScreenWrapper from '../../../components/ScreenWrapper/ScreenWrapper';
 import { TENANT_ID } from '../../../utils/config';
+import Auto from '../../../assets/auto.svg';
 
 type NavProp = StackNavigationProp<PricingStackParamList, 'SelectVehicle'>;
 
@@ -27,7 +28,7 @@ const VEHICLES: { type: VehicleType; icon: any; color: string; desc: string }[] 
   { type: 'EV', icon: 'flash', color: '#10B981', desc: 'Electric vehicles & green mobility' },
   { type: 'Bike', icon: 'bicycle', color: '#3B82F6', desc: 'Two-wheelers & standard motorbikes' },
   { type: 'Car', icon: 'car-sport', color: '#8B5CF6', desc: 'Standard sedans, SUVs & heavy vehicles' },
-  { type: 'AUTO', icon: 'bus', color: '#0EA5E9', desc: 'Auto rickshaws & three-wheelers' },
+  { type: 'Auto', icon: 'bus', color: '#0EA5E9', desc: 'Auto rickshaws & three-wheelers' },
 ];
 
 const SelectVehicle: React.FC = () => {
@@ -105,7 +106,11 @@ const SelectVehicle: React.FC = () => {
               activeOpacity={0.7}
             >
               <View style={[styles.iconPlate, { backgroundColor: `${v.color}10` }]}>
+               {v.type === 'Auto' ? (
+                <Auto width={30} height={30} fill={v.color} />
+              ) : (
                 <Ionicons name={v.icon} size={30} color={v.color} />
+              )}
               </View>
 
               <View style={styles.cardInfo}>

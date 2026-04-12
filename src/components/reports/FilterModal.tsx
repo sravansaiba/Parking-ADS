@@ -233,7 +233,7 @@ const FilterModal: React.FC<FilterModalProps> = ({
                     <Picker.Item label="Car" value="Car" />
                     <Picker.Item label="Bike" value="Bike" />
                     <Picker.Item label="EV" value="EV" />
-                    <Picker.Item label="Auto" value="AUTO" />
+                    <Picker.Item label="Auto" value="Auto" />
                     <Picker.Item label="Cycle" value="Cycle" />
                   </Picker>
                 </View>
@@ -257,8 +257,8 @@ const FilterModal: React.FC<FilterModalProps> = ({
                     dropdownIconColor="#FF9800"
                   >
                     <Picker.Item label="All Payment Methods" value="ALL" />
-                    <Picker.Item label="Cash Payment" value="cash" />
-                    <Picker.Item label="Online Payment" value="online" />
+                    <Picker.Item label="Cash Payment" value="CASH" />
+                    <Picker.Item label="Online Payment" value="UPI" />
                   </Picker>
                 </View>
               </View>

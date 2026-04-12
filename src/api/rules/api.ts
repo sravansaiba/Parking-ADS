@@ -208,7 +208,7 @@ export const pricingApi = {
     minutes: number
   ): Promise<number> => {
     try {
-      const type = vehicleType.toUpperCase();
+      const type = vehicleType;
 
       const { data: rule, error: ruleError } = await supabase
         .from('pricing_rules')
@@ -234,7 +234,7 @@ export const pricingApi = {
 
       const DAY_MINUTES = 1440;
 
-      if (type === 'CAR' || type === 'AUTO') {
+      if (type === 'Car' || type === 'Auto') {
         const cycles = Math.ceil(minutes / DAY_MINUTES);
 
         const dailyItem =
@@ -243,7 +243,7 @@ export const pricingApi = {
         return cycles * Number(dailyItem.price);
       }
 
-      if (type === 'EV' || type === 'BIKE') {
+      if (type === 'EV' || type === 'Bike') {
         const fullDays = Math.floor(minutes / DAY_MINUTES);
         const remaining = minutes % DAY_MINUTES;
 
@@ -299,7 +299,7 @@ export const pricingApi = {
     EV: boolean;
     Bike: boolean;
     Car: boolean;
-    AUTO: boolean;
+    Auto: boolean;
   }> => {
     try {
       const { data: rules, error } = await supabase
@@ -309,7 +309,7 @@ export const pricingApi = {
 
       if (error) throw error;
 
-      const result = { EV: false, Bike: false, Car: false, AUTO: false };
+      const result = { EV: false, Bike: false, Car: false, Auto: false };
 
       rules?.forEach(rule => {
         const key = rule.name?.toUpperCase();
@@ -318,7 +318,7 @@ export const pricingApi = {
           if (key === 'EV') result.EV = true;
           if (key === 'BIKE') result.Bike = true;
           if (key === 'CAR') result.Car = true;
-          if (key === 'AUTO') result.AUTO = true;
+          if (key === 'Auto') result.Auto = true;
         }
       });
 

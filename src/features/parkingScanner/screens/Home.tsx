@@ -55,19 +55,19 @@ export default function HomeScreen() {
   const [showStartForm, setShowStartForm] = useState(false);
   const [showEndForm, setShowEndForm] = useState(false);
 
- type VehicleType = "EV" | "Bike" | "Car" | "AUTO";
+ type VehicleType = "EV" | "Bike" | "Car" | "Auto";
   const VEHICLE_ICONS: Record<VehicleType, keyof typeof Ionicons.glyphMap> = {
     EV: "flash",
     Bike: "bicycle",
     Car: "car-sport",
-    AUTO: "bus",
+    Auto: "bus",
   };
 
   const [vehicleCounts, setVehicleCounts] = useState<Record<VehicleType, number>>({
     EV: 0,
     Bike: 0,
     Car: 0,
-    AUTO: 0,
+    Auto: 0,
   });
 
   const onRefresh = async () => {
@@ -134,7 +134,7 @@ export default function HomeScreen() {
     const sessions = (await getActiveSessionsForDashboard(freshUser.tenant_id)) as { vehicle_type?: VehicleType }[];
     setCurrentVehicles(sessions.length);
 
-    const counts: Record<VehicleType, number> = { EV: 0, Bike: 0, Car: 0, AUTO: 0 };
+    const counts: Record<VehicleType, number> = { EV: 0, Bike: 0, Car: 0, Auto: 0 };
     sessions.forEach((s) => {
       if (s.vehicle_type && s.vehicle_type in counts) {
         counts[s.vehicle_type as VehicleType]++;
@@ -398,10 +398,10 @@ export default function HomeScreen() {
 
             <TouchableOpacity
               style={[styles.vehicleStatCard, { backgroundColor: "#0EA5E9" }]}
-              onPress={() => navigation.navigate("RunningVehicles", { vehicleType: "AUTO" })}
+              onPress={() => navigation.navigate("RunningVehicles", { vehicleType: "Auto" })}
             >
-              <Auto width={30} height={30} />
-              <Text style={styles.vehicleStatValue}>{vehicleCounts.AUTO}</Text>
+              <Auto width={30} height={30} color="#FFFFFF" />
+              <Text style={styles.vehicleStatValue}>{vehicleCounts.Auto}</Text>
               <Text style={styles.vehicleStatLabel}>Auto</Text>
             </TouchableOpacity>
 

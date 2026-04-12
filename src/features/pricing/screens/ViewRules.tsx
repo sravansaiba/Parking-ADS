@@ -20,7 +20,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { PricingStackParamList } from '../../../app/navigation/PricingStack';
 import { TENANT_ID } from '../../../utils/config';
-
+import Auto from '../../../assets/auto.svg';
 const { width } = Dimensions.get('window');
 
 type ViewRulesScreenNavigationProp = StackNavigationProp<PricingStackParamList, 'ViewRules'>;
@@ -30,6 +30,7 @@ const VEHICLE_THEMES: Record<VehicleType, { icon: any; color: string; bg: string
   EV: { icon: 'flash', color: '#059669', bg: '#ECFDF5' },
   Bike: { icon: 'bicycle', color: '#2563EB', bg: '#EFF6FF' },
   Car: { icon: 'car-sport', color: '#7C3AED', bg: '#F5F3FF' },
+  Auto: { icon: 'bus', color: '#F97316', bg: '#FFF7ED' },
 };
 
 const ViewRules: React.FC = () => {
@@ -126,7 +127,11 @@ const ViewRules: React.FC = () => {
               <View key={rule.id} style={[styles.card, isExpanded && styles.cardActive]}>
                 <TouchableOpacity style={styles.cardHeader} onPress={() => toggleExpand(rule.id)} activeOpacity={0.7}>
                   <View style={[styles.iconPlate, { backgroundColor: theme.bg }]}>
-                    <Ionicons name={theme.icon} size={26} color={theme.color} />
+                    {rule.name === 'Auto' ? (
+                      <Auto width={26} height={26} fill="#F97316" />
+                    ) : (
+                      <Ionicons name={theme.icon} size={26} color={theme.color} />
+                    )}
                   </View>
                   
                   <View style={styles.cardMainInfo}>
@@ -167,7 +172,7 @@ const ViewRules: React.FC = () => {
                         <Text style={styles.toggleLabel}>Status</Text>
                         <Switch
                           value={rule.is_active}
-                          onValueChange={() => toggleRuleStatus(rule.id, !rule.is_active)}
+                          onValueChange={(newValue) => toggleRuleStatus(rule.id, newValue)}
                           trackColor={{ false: '#E2E8F0', true: theme.color }}
                           thumbColor="#fff"
                         />

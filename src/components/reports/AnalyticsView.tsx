@@ -338,7 +338,7 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ tenantId, filters }) => {
                 <Icon name="rickshaw" size={18} color="#0EA5E9" />
                 <Text style={styles.breakdownLabel}>Autos</Text>
               </View>
-              <Text style={styles.breakdownValue}>{summary.vehicleBreakdown.AUTO}</Text>
+              <Text style={styles.breakdownValue}>{summary.vehicleBreakdown.Auto}</Text>
             </View>
           </View>
         </View>
