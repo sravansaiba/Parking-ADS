@@ -243,7 +243,7 @@ const generateHTMLReport = (
             Cars: <strong>${summary.vehicleBreakdown.Car}</strong> | 
             Bikes: <strong>${summary.vehicleBreakdown.Bike}</strong> | 
             EVs: <strong>${summary.vehicleBreakdown.EV}</strong> | 
-            Autos: <strong>${summary.vehicleBreakdown.AUTO}</strong> |
+            Autos: <strong>${summary.vehicleBreakdown.Auto}</strong> |
           </div>
         </div>
       </div>

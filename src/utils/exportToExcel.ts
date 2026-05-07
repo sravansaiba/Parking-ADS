@@ -76,7 +76,7 @@ export const exportToExcel = async ({
       { Metric: 'Cars', Value: summary.vehicleBreakdown.Car },
       { Metric: 'Bikes', Value: summary.vehicleBreakdown.Bike },
       { Metric: 'EVs', Value: summary.vehicleBreakdown.EV },
-      { Metric: 'Autos', Value: summary.vehicleBreakdown.AUTO },
+      { Metric: 'Autos', Value: summary.vehicleBreakdown.Auto },
       { Metric: 'Avg Duration', Value: `${Math.round(summary.averageSessionDuration)} min` },
     ]);
 

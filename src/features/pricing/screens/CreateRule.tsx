@@ -40,7 +40,7 @@ const VEHICLE_THEMES: Record<VehicleType, { icon: any; color: string; bg: string
   EV: { icon: 'flash', color: '#10B981', bg: '#ECFDF5' },
   Bike: { icon: 'bicycle', color: '#3B82F6', bg: '#EFF6FF' },
   Car: { icon: 'car-sport', color: '#8B5CF6', bg: '#F5F3FF' },
-  AUTO: { icon: 'bus', color: '#0EA5E9', bg: '#E0F2FE' },
+  Auto: { icon: 'bus', color: '#0EA5E9', bg: '#E0F2FE' },
 };
 
 const CreateRule: React.FC = () => {

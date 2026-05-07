@@ -729,13 +729,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   summaryValue: {
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: "700",
     color: "#212121",
     marginBottom: 2,
   },
   summaryLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: "#757575",
     fontWeight: "500",
   },

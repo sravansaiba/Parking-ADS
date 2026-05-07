@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import pricingApi from '../../api/rules/api';
 import { CreateRulePayload, PricingRuleWithItems } from '../../types/pricingrules';
 
-export type VehicleType = 'EV' | 'Bike' | 'Car' | 'AUTO';
+export type VehicleType = 'EV' | 'Bike' | 'Car' | 'Auto';
 
 interface PricingStore {
   rules: PricingRuleWithItems[];
@@ -14,7 +14,7 @@ interface PricingStore {
     EV: boolean;
     Bike: boolean;
     Car: boolean;
-    AUTO: boolean;
+    Auto: boolean;
   };
 
   setRules: (rules: PricingRuleWithItems[]) => void;
@@ -48,7 +48,7 @@ export const usePricingStore = create<PricingStore>((set, get) => ({
     EV: false,
     Bike: false,
     Car: false,
-    AUTO: false,
+    Auto: false,
   },
 
   setRules: (rules) => set({ rules }),
@@ -129,15 +129,25 @@ export const usePricingStore = create<PricingStore>((set, get) => ({
   },
 
   toggleRuleStatus: async (ruleId, isActive) => {
+    const previousRules = get().rules;
+    const previousSelected = get().selectedRule;
+    set({
+      rules: previousRules.map(r =>
+        r.id === ruleId ? { ...r, is_active: isActive } : r
+      ),
+      selectedRule: previousSelected?.id === ruleId
+        ? { ...previousSelected, is_active: isActive }
+        : previousSelected,
+    });
+
     try {
       await pricingApi.toggleRuleStatus(ruleId, isActive);
-      const currentRules = get().rules;
-      const updatedRules = currentRules.map(rule =>
-        rule.id === ruleId ? { ...rule, is_active: isActive } : rule
-      );
-      set({ rules: updatedRules });
     } catch (error: any) {
-      set({ error: error.message });
+      set({
+        rules: previousRules,
+        selectedRule: previousSelected,
+        error: error.message,
+      });
       throw error;
     }
   },
@@ -194,7 +204,7 @@ export const usePricingStore = create<PricingStore>((set, get) => ({
       EV: false,
       Bike: false,
       Car: false,
-      AUTO: false,
+      Auto: false,
     },
   }),
 }));

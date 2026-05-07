@@ -460,7 +460,7 @@ export const reportsApi = {
     totalRevenue: 0,
     cashAmount: 0,
     onlineAmount: 0,
-    vehicleBreakdown: { Car: 0, Bike: 0, EV: 0, AUTO: 0 },
+    vehicleBreakdown: { Car: 0, Bike: 0, EV: 0, Auto: 0 },
     averageSessionDuration: 0,
   };
 

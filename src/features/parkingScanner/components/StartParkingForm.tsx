@@ -25,7 +25,7 @@ type VehicleTypeSelectorProps = {
 
 const VehicleTypeSelector = ({ value, onChange }: VehicleTypeSelectorProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const options = ['Car', 'Bike', 'EV', 'AUTO'];
+  const options = ['Car', 'Bike', 'EV', 'Auto'];
 
   return (
     <View style={styles.dropdownContainer}>
