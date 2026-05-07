@@ -112,9 +112,11 @@ type AppUser = {
 type AuthState = {
   user: AppUser | null;
   loading: boolean;
+  error: string | null;
   setUser: (user: AppUser | null) => void;
   signOut: () => Promise<void>;
   init: () => Promise<void>;
+  clearError: () => void;
 };
 
 const fetchAppUser = async (authUserId: string, email: string | null | undefined): Promise<AppUser | null> => {
@@ -124,8 +126,13 @@ const fetchAppUser = async (authUserId: string, email: string | null | undefined
     .eq('id', authUserId)
     .single();
 
-  if (error || !data) {
-    console.error('AuthStore: No app_user found for', authUserId);
+  if (error) {
+    console.error('AuthStore: Error fetching app_user:', error);
+    throw new Error('Could not connect to user database. Please try again.');
+  }
+
+  if (!data) {
+    console.warn('AuthStore: No app_user record found for', authUserId);
     return null;
   }
 
@@ -142,47 +149,85 @@ const fetchAppUser = async (authUserId: string, email: string | null | undefined
   };
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   loading: true,
+  error: null,
 
-  setUser: (user) => set({ user, loading: false }),
+  setUser: (user) => set({ user, loading: false, error: null }),
 
   signOut: async () => {
-    await supabase.auth.signOut();
-    set({ user: null, loading: false });
-  },
-
-  // ✅ init() — call ONCE on app start in your root component
-  // Sets up the auth listener at the top level — never called again
-  init: async () => {
-    set({ loading: true });
-
-    // 1. Check if there's already a valid persisted session (from AsyncStorage)
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (session?.user) {
-      const appUser = await fetchAppUser(session.user.id, session.user.email);
-      set({ user: appUser, loading: false });
-    } else {
+    try {
+      await supabase.auth.signOut();
+      set({ user: null, loading: false, error: null });
+    } catch (err) {
+      console.error('Sign out error:', err);
       set({ user: null, loading: false });
     }
+  },
 
-    // 2. Listen for all future auth changes — TOKEN_REFRESHED, SIGNED_OUT, etc.
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT' || !session?.user) {
-        set({ user: null, loading: false });
-        return;
-      }
+  clearError: () => set({ error: null }),
 
-      if (
-        event === 'SIGNED_IN' ||
-        event === 'TOKEN_REFRESHED' ||
-        event === 'USER_UPDATED'
-      ) {
-        const appUser = await fetchAppUser(session.user.id, session.user.email);
+  init: async () => {
+    // Prevent multiple initializations if already loading
+    if (!get().loading && get().user) return;
+
+    set({ loading: true, error: null });
+
+    const timeout = (ms: number) =>
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timed out. Please check your internet.')), ms)
+      );
+
+    try {
+      // 1. Check for session with a 10s timeout
+      const sessionResult = await Promise.race([
+        supabase.auth.getSession(),
+        timeout(10000)
+      ]) as any;
+
+      const session = sessionResult.data?.session;
+
+      if (session?.user) {
+        // Fetch user data with another timeout
+        const appUser = await Promise.race([
+          fetchAppUser(session.user.id, session.user.email),
+          timeout(8000)
+        ]) as AppUser | null;
+        
         set({ user: appUser, loading: false });
+      } else {
+        set({ user: null, loading: false });
       }
-    });
+
+      // 2. Setup Auth Change Listener
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_OUT' || !session?.user) {
+          set({ user: null, loading: false });
+          return;
+        }
+
+        if (
+          event === 'SIGNED_IN' ||
+          event === 'TOKEN_REFRESHED' ||
+          event === 'USER_UPDATED'
+        ) {
+          try {
+            const appUser = await fetchAppUser(session.user.id, session.user.email);
+            set({ user: appUser, loading: false });
+          } catch (err) {
+            console.error('Auth change user fetch error:', err);
+          }
+        }
+      });
+
+    } catch (err: any) {
+      console.error('AuthStore Initialization Error:', err);
+      set({ 
+        error: err.message || 'Failed to initialize application', 
+        loading: false,
+        user: null // Fallback to login screen
+      });
+    }
   },
 }));

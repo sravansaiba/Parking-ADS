@@ -232,7 +232,7 @@ export const pricingApi = {
         throw new Error('No pricing items found');
       }
 
-      const DAY_MINUTES = 1440;
+      const DAY_MINUTES = 1450; // New Rule: Cycle is 1450 minutes (24h 10m)
 
       if (type === 'CAR' || type === 'AUTO') {
         const cycles = Math.ceil(minutes / DAY_MINUTES);
