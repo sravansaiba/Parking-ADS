@@ -30,6 +30,7 @@ export default function DailyReport() {
   const { user } = useAuthStore();
   const navigation = useNavigation<any>();
   const tenantId = user?.tenant_id;
+  const isStaff = user?.role?.toLowerCase() === "staff";
 
   const [date, setDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
@@ -68,7 +69,7 @@ export default function DailyReport() {
 
     const { data: outData } = await supabase
       .from('parking_sessions')
-      .select('id,start_time,end_time,payment_info')
+      .select('id,start_time,end_time,payment_info,total_amount,payment_type')
       .eq('tenant_id', tenantId)
       .gte('end_time', start.toISOString())
       .lte('end_time', end.toISOString());
@@ -79,12 +80,16 @@ export default function DailyReport() {
     let cashTotal = 0;
     let upiTotal = 0;
 
-    (outData || []).forEach((s: Session) => {
-      const payments = s.payment_info?.payments || [];
-      payments.forEach((p: any) => {
-        if (p.type === 'cash') cashTotal += p.amount;
-        if (p.type === 'upi') upiTotal += p.amount;
-      });
+    (outData || []).forEach((s: any) => {
+      const amount = Number(s.total_amount || 0);
+
+      if (s.payment_type === 'CASH') {
+        cashTotal += amount;
+      }
+
+      if (s.payment_type === 'UPI') {
+        upiTotal += amount;
+      }
     });
 
     setCash(cashTotal);
@@ -188,26 +193,28 @@ export default function DailyReport() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.revenueCard}>
-        <Text style={styles.revenueTitle}>Revenue</Text>
+      {!isStaff && (
+        <View style={styles.revenueCard}>
+          <Text style={styles.revenueTitle}>Revenue</Text>
 
-        <View style={styles.revenueRow}>
-          <Text style={styles.revenueLabel}>Cash</Text>
-          <Text style={styles.revenueValue}>₹{cash}</Text>
+          <View style={styles.revenueRow}>
+            <Text style={styles.revenueLabel}>Cash</Text>
+            <Text style={styles.revenueValue}>₹{cash}</Text>
+          </View>
+
+          <View style={styles.revenueRow}>
+            <Text style={styles.revenueLabel}>UPI</Text>
+            <Text style={styles.revenueValue}>₹{upi}</Text>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.revenueRow}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>₹{cash + upi}</Text>
+          </View>
         </View>
-
-        <View style={styles.revenueRow}>
-          <Text style={styles.revenueLabel}>UPI</Text>
-          <Text style={styles.revenueValue}>₹{upi}</Text>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.revenueRow}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>₹{cash + upi}</Text>
-        </View>
-      </View>
+      )}
     </ScrollView>
   );
 }

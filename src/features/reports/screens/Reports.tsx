@@ -65,6 +65,7 @@ const Reports: React.FC = () => {
 
   const { user } = useAuthStore();
   const tenantId = user?.tenant_id;
+  const isStaff = user?.role?.toLowerCase() === "staff";
 
   const [filters, setFilters] = useState<ReportFilters>({
     startDate: getStartOfMonth(new Date()),
@@ -244,22 +245,26 @@ const Reports: React.FC = () => {
                   >
                     <Icon name="magnify" size={22} color="#fff" />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.headerButton,
-                      sessions.length === 0 && styles.headerButtonDisabled,
-                    ]}
-                    onPress={() => setShowExportMenu(true)}
-                    disabled={sessions.length === 0}
-                  >
-                    <Icon name="download" size={22} color="#fff" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.headerButton}
-                    onPress={() => setShowCleanupModal(true)}
-                  >
-                    <Icon name="delete-outline" size={22} color="#fff" />
-                  </TouchableOpacity>
+                  {!isStaff && (
+                    <TouchableOpacity
+                      style={[
+                        styles.headerButton,
+                        sessions.length === 0 && styles.headerButtonDisabled,
+                      ]}
+                      onPress={() => setShowExportMenu(true)}
+                      disabled={sessions.length === 0}
+                    >
+                      <Icon name="download" size={22} color="#fff" />
+                    </TouchableOpacity>
+                   )}
+                  {!isStaff && (
+                    <TouchableOpacity
+                      style={styles.headerButton}
+                      onPress={() => setShowCleanupModal(true)}
+                    >
+                      <Icon name="delete-outline" size={22} color="#fff" />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </>
             )}
@@ -330,7 +335,7 @@ const Reports: React.FC = () => {
         </View>
 
         {/* Summary Cards - More Compact */}
-        {summary && viewMode === "table" && (
+        {summary && viewMode === "table" && !isStaff && (
           <View style={styles.summarySection}>
             <View style={styles.summaryGrid}>
               <View style={styles.summaryCard}>

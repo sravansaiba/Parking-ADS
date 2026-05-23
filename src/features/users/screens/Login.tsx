@@ -58,12 +58,18 @@ export default function LoginScreen({ navigation }: any) {
       const user = data.user;
 
       if (user) {
+        const { data: appUser } = await supabase
+          .from("app_users")
+          .select("id, tenant_id, name, role")
+          .eq("id", user.id)
+          .single();
+
         setUser({
           id: user.id,
           email: user.email ?? null,
-          tenant_id: user.user_metadata?.tenant_id,
-          name: user.user_metadata?.name,
-          role: user.user_metadata?.role,
+          tenant_id: appUser?.tenant_id ?? user.user_metadata?.tenant_id ?? null,
+          name: appUser?.name ?? user.user_metadata?.name,
+          role: appUser?.role ?? user.user_metadata?.role,
         });
       }
     } catch (err: any) {

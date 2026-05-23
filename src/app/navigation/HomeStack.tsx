@@ -5,6 +5,8 @@ import RunningVehicles from '../../features/parkingScanner/screens/RunningVehicl
 import EndParkingScreen from '../../features/parkingScanner/screens/EndParkingScreen';
 import DailyReport from '../../features/reports/screens/DailyReport';
 import VehicleListReport from '../../features/reports/screens/VehicleListReport';
+import UserHome from '../../features/users/screens/UserHome';
+import ChangePassword from '../../features/users/screens/ChangePassword';
 
 
 export type HomeStackParamList = {
@@ -34,6 +36,8 @@ const HomeStack: React.FC = () => {
       <Stack.Screen name="EndParking" component={EndParkingScreen} />
       <Stack.Screen name="DailyReport" component={DailyReport} />
       <Stack.Screen name="VehicleListReport" component={VehicleListReport} />
+      <Stack.Screen name="UserHome" component={UserHome} />
+      <Stack.Screen name="ChangePassword" component={ChangePassword} />
     </Stack.Navigator>
   );
 };

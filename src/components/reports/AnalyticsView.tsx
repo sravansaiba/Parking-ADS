@@ -11,6 +11,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { BarChart, PieChart, LineChart } from 'react-native-gifted-charts';
 import { reportsApi } from '../../api/reports/api';
 import { ReportFilters, AnalyticsData } from '../../types/reports';
+import { useAuthStore } from '../../store/authStore';
 
 interface AnalyticsViewProps {
   tenantId: string;
@@ -23,6 +24,8 @@ const chartWidth = width - 64;
 const AnalyticsView: React.FC<AnalyticsViewProps> = ({ tenantId, filters }) => {
   const [loading, setLoading] = useState(true);
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
+  const user = useAuthStore((state) => state.user);
+  const isStaff = user?.role?.toLowerCase() === 'staff';
 
   useEffect(() => {
     loadAnalyticsData();
@@ -82,6 +85,19 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ tenantId, filters }) => {
       dataPointText: hour.count.toString(),
     }));
 
+  const dailyRevenueBarWidth = Math.max(
+    12,
+    Math.min(28, Math.floor((chartWidth - 40) / Math.max(dailyRevenueChartData.length * 1.8, 1)))
+  );
+  const dailyRevenueSpacing = Math.max(
+    6,
+    Math.min(16, Math.floor((chartWidth - 40) / Math.max(dailyRevenueChartData.length * 3.2, 1)))
+  );
+  const hourlyTrafficSpacing = Math.max(
+    18,
+    Math.min(45, Math.floor((chartWidth - 20) / Math.max(hourlyTrafficData.length, 1)))
+  );
+
   return (
     <ScrollView 
       style={styles.container}
@@ -103,16 +119,18 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ tenantId, filters }) => {
             <Text style={styles.metricValue}>{summary.totalSessions}</Text>
             <Text style={[styles.metricLabel, { paddingLeft: 10 }]}>Sessions</Text>
           </View>
-          
-          <View style={[styles.metricCard, { backgroundColor: '#E8F5E9' }]}>
-            <View style={[styles.metricIconContainer, { backgroundColor: '#C8E6C9' }]}>
-              <Icon name="cash-multiple" size={24} color="#4CAF50" />
+
+          {!isStaff && (
+            <View style={[styles.metricCard, { backgroundColor: '#E8F5E9' }]}>
+              <View style={[styles.metricIconContainer, { backgroundColor: '#C8E6C9' }]}>
+                <Icon name="cash-multiple" size={24} color="#4CAF50" />
+              </View>
+              <Text style={[styles.metricValue, { color: '#4CAF50' }]}>
+                ₹{summary.totalRevenue.toFixed(0)}
+              </Text>
+              <Text style={[styles.metricLabel, { paddingLeft: 10 }]}>Revenue</Text>
             </View>
-            <Text style={[styles.metricValue, { color: '#4CAF50' }]}>
-              ₹{summary.totalRevenue.toFixed(0)}
-            </Text>
-            <Text style={[styles.metricLabel, { paddingLeft: 10 }]}>Revenue</Text>
-          </View>
+          )}
           
           <View style={[styles.metricCard, { backgroundColor: '#E3F2FD' }]}>
             <View style={[styles.metricIconContainer, { backgroundColor: '#BBDEFB' }]}>
@@ -123,21 +141,22 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ tenantId, filters }) => {
             </Text>
             <Text style={[styles.metricLabel, { paddingLeft: 10 }]}>Avg Duration</Text>
           </View>
-          
-          <View style={[styles.metricCard, { backgroundColor: '#F3E5F5' }]}>
-            <View style={[styles.metricIconContainer, { backgroundColor: '#E1BEE7' }]}>
-              <Icon name="chart-line" size={24} color="#9C27B0" />
+          {!isStaff && (
+            <View style={[styles.metricCard, { backgroundColor: '#F3E5F5' }]}>
+              <View style={[styles.metricIconContainer, { backgroundColor: '#E1BEE7' }]}>
+                <Icon name="chart-line" size={24} color="#9C27B0" />
+              </View>
+              <Text style={[styles.metricValue, { color: '#9C27B0' }]}>
+                ₹{(summary.totalRevenue / summary.totalSessions || 0).toFixed(0)}
+              </Text>
+              <Text style={[styles.metricLabel, { paddingLeft: 10 }]}>Avg Revenue</Text>
             </View>
-            <Text style={[styles.metricValue, { color: '#9C27B0' }]}>
-              ₹{(summary.totalRevenue / summary.totalSessions || 0).toFixed(0)}
-            </Text>
-            <Text style={[styles.metricLabel, { paddingLeft: 10 }]}>Avg Revenue</Text>
-          </View>
+          )}
         </View>
       </View>
 
       {/* Daily Revenue Chart */}
-      {dailyRevenueChartData.length > 0 && (
+      {!isStaff && dailyRevenueChartData.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionIconContainer}>
@@ -215,7 +234,7 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ tenantId, filters }) => {
       )}
 
       {/* Payment Split */}
-      {paymentSplit.length > 0 && (
+      {!isStaff && paymentSplit.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionIconContainer}>
@@ -343,31 +362,32 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ tenantId, filters }) => {
           </View>
         </View>
 
-        <View style={styles.breakdownSection}>
-          <Text style={styles.breakdownSectionTitle}>Payment Summary</Text>
-          <View style={styles.breakdownTable}>
-            <View style={[styles.breakdownRow, styles.breakdownHighlight]}>
-              <View style={styles.breakdownLeft}>
-                <Icon name="cash" size={18} color="#4CAF50" />
-                <Text style={styles.breakdownLabelBold}>Cash Payments</Text>
+        {!isStaff && (
+          <View style={styles.breakdownSection}>
+            <Text style={styles.breakdownSectionTitle}>Payment Summary</Text>
+            <View style={styles.breakdownTable}>
+              <View style={[styles.breakdownRow, styles.breakdownHighlight]}>
+                <View style={styles.breakdownLeft}>
+                  <Icon name="cash" size={18} color="#4CAF50" />
+                  <Text style={styles.breakdownLabelBold}>Cash Payments</Text>
+                </View>
+                <Text style={styles.breakdownValueBold}>
+                  ₹{summary.cashAmount.toFixed(2)}
+                </Text>
               </View>
-              <Text style={styles.breakdownValueBold}>
-                ₹{summary.cashAmount.toFixed(2)}
-              </Text>
-            </View>
-            <View style={[styles.breakdownRow, styles.breakdownHighlight]}>
-              <View style={styles.breakdownLeft}>
-                <Icon name="contactless-payment" size={18} color="#9C27B0" />
-                <Text style={styles.breakdownLabelBold}>Online Payments</Text>
+              <View style={[styles.breakdownRow, styles.breakdownHighlight]}>
+                <View style={styles.breakdownLeft}>
+                  <Icon name="contactless-payment" size={18} color="#9C27B0" />
+                  <Text style={styles.breakdownLabelBold}>Online Payments</Text>
+                </View>
+                <Text style={styles.breakdownValueBold}>
+                  ₹{summary.onlineAmount.toFixed(2)}
+                </Text>
               </View>
-              <Text style={styles.breakdownValueBold}>
-                ₹{summary.onlineAmount.toFixed(2)}
-              </Text>
             </View>
           </View>
+        )}
         </View>
-      </View>
-
       <View style={styles.bottomPadding} />
     </ScrollView>
   );

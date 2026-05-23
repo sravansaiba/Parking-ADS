@@ -33,6 +33,9 @@ const STATUS_BAR_HEIGHT =
   Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
 
 export default function HomeScreen() {
+  const tenantId = useAuthStore((state) => state.user?.tenant_id);
+  const role = useAuthStore((state) => state.user?.role);
+  const isStaff = role?.toLowerCase() === "staff";
   const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const scanAnim = useRef(new Animated.Value(0)).current;
@@ -54,6 +57,9 @@ export default function HomeScreen() {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showStartForm, setShowStartForm] = useState(false);
   const [showEndForm, setShowEndForm] = useState(false);
+
+   // ── Profile dropdown ──
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
  type VehicleType = "EV" | "Bike" | "Car" | "Auto";
   const VEHICLE_ICONS: Record<VehicleType, keyof typeof Ionicons.glyphMap> = {
@@ -146,13 +152,20 @@ export default function HomeScreen() {
     setLastDeparted(lastSession);
   };
 
+  useEffect(() => {
+    if (!tenantId) return;
+    refreshDashboard();
+  }, [tenantId]);
+
   useFocusEffect(
     React.useCallback(() => {
       refreshDashboard();
       scannedRef.current = false;
       isProcessingScan.current = false;
-    }, []),
+      setShowProfileMenu(false);
+    }, [tenantId])
   );
+
 
   const handleQRScan = async (event: any) => {
     // Check both local ref and the API processing lock
@@ -186,7 +199,6 @@ export default function HomeScreen() {
       if (data?.action === "START") {
         setScannedQR(code);
         setShowStartForm(true);
-        // Note: scannedRef/isProcessing remains true to prevent background scans while form is open
       } else if (data?.action === "END") {
         setActiveSession(data.session);
         setShowEndForm(true);
@@ -295,10 +307,89 @@ export default function HomeScreen() {
             <Text style={styles.headerTitle}>Smart Parking</Text>
             <Text style={styles.headerSub}>Scan QR to manage parking sessions</Text>
           </View>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-            <Ionicons name="log-out-outline" size={24} color="#e65d0d" />
-          </TouchableOpacity>
+          <View style={{ zIndex: 100 }}>
+            <TouchableOpacity
+              onPress={() => setShowProfileMenu((v) => !v)}
+              style={styles.profileBtn}
+              activeOpacity={0.7}
+            >
+              <View style={styles.profileCircle}>
+                <Ionicons name="person" size={20} color="#e65d0d" />
+              </View>
+            </TouchableOpacity>
+
+            {showProfileMenu && (
+              <View style={styles.profileMenu}>
+                {!isStaff && (
+                  <>
+                    {/* Users */}
+                    <TouchableOpacity
+                      style={styles.profileMenuItem}
+                      onPress={() => {
+                        setShowProfileMenu(false);
+                        navigation.navigate("UserHome");
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.menuIconWrap, { backgroundColor: "#eff6ff" }]}>
+                        <Ionicons name="people-outline" size={17} color="#3b82f6" />
+                      </View>
+                      <Text style={styles.profileMenuText}>Staff</Text>
+                      <Ionicons name="chevron-forward" size={14} color="#9ca3af" />
+                    </TouchableOpacity>
+
+                    <View style={styles.profileMenuDivider} />
+
+                    {/* Change Password */}
+                    <TouchableOpacity
+                      style={styles.profileMenuItem}
+                      onPress={() => {
+                        setShowProfileMenu(false);
+                        navigation.navigate("ChangePassword");
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.menuIconWrap, { backgroundColor: "#f0fdf4" }]}>
+                        <Ionicons name="lock-closed-outline" size={17} color="#16a34a" />
+                      </View>
+                      <Text style={styles.profileMenuText}>Change Password</Text>
+                      <Ionicons name="chevron-forward" size={14} color="#9ca3af" />
+                    </TouchableOpacity>
+
+                    <View style={styles.profileMenuDivider} />
+                  </>
+                )}
+
+                {/* Logout */}
+                <TouchableOpacity
+                  style={styles.profileMenuItem}
+                  onPress={() => {
+                    setShowProfileMenu(false);
+                    handleLogout();
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.menuIconWrap, { backgroundColor: "#fef2f2" }]}>
+                    <Ionicons name="log-out-outline" size={17} color="#ef4444" />
+                  </View>
+                  <Text style={[styles.profileMenuText, { color: "#ef4444" }]}>
+                    Logout
+                  </Text>
+                  <Ionicons name="chevron-forward" size={14} color="#9ca3af" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         </View>
+
+        {/* Tap outside to close profile menu */}
+        {showProfileMenu && (
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setShowProfileMenu(false)}
+            activeOpacity={1}
+          />
+        )}
 
         <View style={styles.scannerCard}>
           {!scanning ? (
@@ -552,4 +643,60 @@ const styles = StyleSheet.create({
   vehicleStatCard: { flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: "center" },
   vehicleStatValue: { fontSize: 22, fontWeight: "800", color: "#fff" },
   vehicleStatLabel: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.95)", marginTop: 4 },
+   profileBtn: {
+    padding: 2,
+  },
+  profileCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#fff7f3",
+    borderWidth: 1.5,
+    borderColor: "#fde8da",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileMenu: {
+    position: "absolute",
+    top: 48,
+    right: 0,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    paddingVertical: 6,
+    width: 210,
+    elevation: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    zIndex: 999,
+    borderWidth: 1,
+    borderColor: "#f3f4f6",
+  },
+  profileMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  menuIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileMenuText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  profileMenuDivider: {
+    height: 1,
+    backgroundColor: "#f3f4f6",
+    marginHorizontal: 12,
+  },
+  // ──
 });
