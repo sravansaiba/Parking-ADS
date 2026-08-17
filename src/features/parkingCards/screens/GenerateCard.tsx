@@ -13,10 +13,14 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useCardStore } from "../cardStore";
+import { useAuthStore } from "../../../store/authStore";
 
 const QUICK_COUNTS = [50, 100, 200, 300, 500];
 
 const GenerateCard: React.FC = () => {
+  const role = useAuthStore((state) => state.user?.role);
+  const isStaff = role?.toLowerCase() === "staff";
+
   const { generateCards, totalCards, qrCodes } = useCardStore();
 
   const [count, setCount] = useState("");
@@ -27,11 +31,17 @@ const GenerateCard: React.FC = () => {
     qrCodes.length > 0 ? qrCodes[0].code_text : null;
 
   const handleQuickSelect = (value: number) => {
+    if (isStaff) return;
     setSelectedQuick(value);
     setCount(String(value));
   };
 
   const handleGenerate = () => {
+    if (isStaff) {
+      Alert.alert("Permission Denied", "Staff members do not have permission to generate cards.");
+      return;
+    }
+
     const num = parseInt(count);
 
     if (!count || isNaN(num) || num <= 0) {
@@ -39,18 +49,32 @@ const GenerateCard: React.FC = () => {
       return;
     }
 
-    if (num > 2000) {
-      Alert.alert(
-        "Large Generation",
-        "You are generating over 2000 cards. This may take a moment. Continue?",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Continue", onPress: () => doGenerate(num) },
-        ]
-      );
-    } else {
-      doGenerate(num);
-    }
+    // Step 1 of Double Confirmation
+    Alert.alert(
+      "Confirm Card Generation",
+      `Are you sure you want to generate ${num} new QR card(s)?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Yes, Generate",
+          onPress: () => {
+            // Step 2 of Double Confirmation
+            Alert.alert(
+              "Final Confirmation",
+              `Please confirm once more: Do you want to proceed with generating ${num} card(s)?`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Confirm & Generate",
+                  style: "destructive",
+                  onPress: () => doGenerate(num),
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
   };
 
   const doGenerate = async (num: number) => {

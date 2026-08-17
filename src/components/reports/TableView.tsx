@@ -685,7 +685,7 @@
 
 
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -696,6 +696,7 @@ import {
   TouchableOpacity,
   Modal,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Ionicons } from '@expo/vector-icons';
 import { ParkingSession } from '../../types/reports';
@@ -715,6 +716,14 @@ const TableView: React.FC<TableViewProps> = ({ sessions, refreshing, onRefresh }
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setDropdownOpen(false);
+      };
+    }, [])
+  );
 
   // ─── Sort sessions: newest end_time first (most recently completed → top) ───
   const sortedSessions = useMemo(() => {
@@ -771,9 +780,14 @@ const TableView: React.FC<TableViewProps> = ({ sessions, refreshing, onRefresh }
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
     const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
+
+    let result = '';
+
+    if (days > 0) result += `${days}d `;
+    if (hours > 0) result += `${hours}h `;
+    if (minutes > 0) result += `${minutes}m`;
+
+    return result.trim() || '0m';
   };
 
   const getVehicleIcon = (vehicleType: string | null): string => {
@@ -888,34 +902,34 @@ const TableView: React.FC<TableViewProps> = ({ sessions, refreshing, onRefresh }
 
 
         {/* Amount */}
-<View style={[styles.cell, styles.amountCell]}>
-  {item.payment_type === 'PARTIAL' ? (
-    <View>
-      <Text style={styles.partialAmountText}>
-        Cash - ₹{getPartialPaymentLines(item).cash}, Upi - ₹{getPartialPaymentLines(item).upi}
-      </Text>
-      {item.is_amount_edited && (
-        <View style={styles.editedBadge}>
-          <Icon name="pencil" size={9} color="#b45309" />
-          <Text style={styles.editedBadgeText}>Edited</Text>
+        <View style={[styles.cell, styles.amountCell]}>
+          {item.payment_type === 'PARTIAL' ? (
+            <View>
+              <Text style={styles.partialAmountText}>
+                Cash - ₹{getPartialPaymentLines(item).cash}, Upi - ₹{getPartialPaymentLines(item).upi}
+              </Text>
+              {item.is_amount_edited && (
+                <View style={styles.editedBadge}>
+                  <Icon name="pencil" size={9} color="#b45309" />
+                  <Text style={styles.editedBadgeText}>Edited</Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            <View>
+              <View style={styles.amountContainer}>
+                <Icon name="currency-inr" size={14} color="#4CAF50" />
+                <Text style={styles.amountText}>{item.total_amount ?? '0'}</Text>
+              </View>
+              {item.is_amount_edited && (
+                <View style={styles.editedBadge}>
+                  <Icon name="pencil" size={9} color="#b45309" />
+                  <Text style={styles.editedBadgeText}>Edited</Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
-      )}
-    </View>
-  ) : (
-    <View>
-      <View style={styles.amountContainer}>
-        <Icon name="currency-inr" size={14} color="#4CAF50" />
-        <Text style={styles.amountText}>{item.total_amount ?? '0'}</Text>
-      </View>
-      {item.is_amount_edited && (
-        <View style={styles.editedBadge}>
-          <Icon name="pencil" size={9} color="#b45309" />
-          <Text style={styles.editedBadgeText}>Edited</Text>
-        </View>
-      )}
-    </View>
-  )}
-</View>
       </View>
     );
   };
@@ -1154,7 +1168,7 @@ const styles = StyleSheet.create({
 
   // ─── Column widths ─────────────────────────────────────────────────────────
   snoCell: { width: 50, justifyContent: 'center' },
-  qrCell: { width: 170, justifyContent: 'flex-start' },
+  qrCell: { width: 140, justifyContent: 'flex-start' },
   vehicleCell: { width: 110, justifyContent: 'flex-start' },
   numberCell: { width: 130, justifyContent: 'flex-start' },
   timeCell: { width: 180, justifyContent: 'flex-start' },
@@ -1399,23 +1413,76 @@ const styles = StyleSheet.create({
   },
 
   editedBadge: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 3,
-  marginTop: 4,
-  backgroundColor: '#fef3c7',
-  paddingHorizontal: 6,
-  paddingVertical: 2,
-  borderRadius: 6,
-  alignSelf: 'flex-start',
-  borderWidth: 1,
-  borderColor: '#fcd34d',
-},
-editedBadgeText: {
-  fontSize: 10,
-  fontWeight: '700',
-  color: '#b45309',
-},
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 4,
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+  },
+  editedBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#b45309',
+  },
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  filterMenuCenter: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    top: '30%',
+    alignItems: 'center',
+  },
+  filterMenu: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  filterMenuTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  filterOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    marginBottom: 8,
+  },
+  filterOptionActive: {
+    backgroundColor: '#FFF3E0',
+    borderWidth: 1,
+    borderColor: '#FF9800',
+  },
+  filterOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  filterOptionTextActive: {
+    color: '#FF9800',
+    fontWeight: '700',
+  },
 });
 
 export default TableView;

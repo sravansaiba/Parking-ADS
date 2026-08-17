@@ -16,6 +16,7 @@ import { useCardStore } from "../cardStore";
 import GenerateCard from "./GenerateCard";
 import ViewCards from "./ViewCards";
 import ScreenWrapper from "../../../components/ScreenWrapper/ScreenWrapper";
+import { useAuthStore } from "../../../store/authStore";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 type TabType = "generate" | "view";
@@ -23,7 +24,10 @@ type TabType = "generate" | "view";
 const tenantIdDefault = "b457b988-9952-4dbe-9a6d-6fa1385a7785";
 
 const Card: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>("generate");
+  const role = useAuthStore((state) => state.user?.role);
+  const isStaff = role?.toLowerCase() === "staff";
+
+  const [activeTab, setActiveTab] = useState<TabType>(isStaff ? "view" : "generate");
   const [showMenu, setShowMenu] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
@@ -31,6 +35,12 @@ const Card: React.FC = () => {
 
   const { totalCards, activeCards, inactiveCards, fetchCards, fetchCounts } =
     useCardStore();
+
+  useEffect(() => {
+    if (isStaff && activeTab !== "view") {
+      setActiveTab("view");
+    }
+  }, [isStaff, activeTab]);
 
   useEffect(() => {
     if (pollInterval.current) {
@@ -140,58 +150,60 @@ return (
         ))}
       </View>
 
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={styles.tab}
-          onPress={() => setActiveTab("generate")}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="add-circle-outline"
-            size={20}
-            color={activeTab === "generate" ? "#F97316" : "#94A3B8"}
-          />
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "generate" && styles.tabTextActive,
-            ]}
+      {!isStaff && (
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => setActiveTab("generate")}
+            activeOpacity={0.8}
           >
-            Generate
-          </Text>
-        </TouchableOpacity>
+            <Ionicons
+              name="add-circle-outline"
+              size={20}
+              color={activeTab === "generate" ? "#F97316" : "#94A3B8"}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "generate" && styles.tabTextActive,
+              ]}
+            >
+              Generate
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.tab}
-          onPress={() => setActiveTab("view")}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="albums-outline"
-            size={20}
-            color={activeTab === "view" ? "#F97316" : "#94A3B8"}
-          />
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "view" && styles.tabTextActive,
-            ]}
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => setActiveTab("view")}
+            activeOpacity={0.8}
           >
-            View Cards
-          </Text>
-        </TouchableOpacity>
+            <Ionicons
+              name="albums-outline"
+              size={20}
+              color={activeTab === "view" ? "#F97316" : "#94A3B8"}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "view" && styles.tabTextActive,
+              ]}
+            >
+              View Cards
+            </Text>
+          </TouchableOpacity>
 
-        <Animated.View
-          style={[
-            styles.indicator,
-            { transform: [{ translateX: indicatorTranslateX }] },
-          ]}
-        />
-      </View>
+          <Animated.View
+            style={[
+              styles.indicator,
+              { transform: [{ translateX: indicatorTranslateX }] },
+            ]}
+          />
+        </View>
+      )}
     </View>
 
     <View style={styles.content}>
-      {activeTab === "generate" ? (
+      {activeTab === "generate" && !isStaff ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ padding: 16, paddingBottom: 30 }}

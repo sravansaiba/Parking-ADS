@@ -142,14 +142,16 @@ export default function StartParkingForm({ qrId, onSuccess, onCancel }: Props) {
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Vehicle Number / Person Name</Text>
+          <Text style={[styles.label, styles.labelHighlighted]}>
+            Vehicle Number / Person Name <Text style={styles.requiredStar}>*</Text>
+          </Text>
           <TextInput
-            placeholder="e.g., KA01AB1234 or Rahul"
+            // placeholder="e.g., KA01AB1234 or Rahul"
             value={vehicleOrPerson}
             onChangeText={(text) => setVehicleOrPerson(text.toUpperCase())}
-            style={styles.input}
+            style={[styles.input, styles.inputHighlighted]}
             autoCapitalize="characters"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor="#64748b"
             editable={!loading}
           />
         </View>
@@ -166,9 +168,9 @@ export default function StartParkingForm({ qrId, onSuccess, onCancel }: Props) {
 
         <View style={styles.actionRow}>
           {onCancel && (
-            <TouchableOpacity 
-              style={[styles.cancelBtn, loading && { opacity: 0.5 }]} 
-              onPress={onCancel} 
+            <TouchableOpacity
+              style={[styles.cancelBtn, loading && { opacity: 0.5 }]}
+              onPress={onCancel}
               disabled={loading}
               activeOpacity={0.8}
             >
@@ -208,6 +210,15 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  labelHighlighted: {
+    color: '#000000ff',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  requiredStar: {
+    color: '#dc2626',
+    fontWeight: '800',
+  },
   input: {
     borderWidth: 1.5,
     borderColor: '#d1d5db',
@@ -216,6 +227,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#1e293b',
     backgroundColor: '#ffffff',
+  },
+  inputHighlighted: {
+    borderWidth: 2,
+    borderColor: '#000000ff',
+    color: '#000000',
+    fontWeight: '600',
+    backgroundColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   inputDisabled: {
     borderWidth: 1.5,

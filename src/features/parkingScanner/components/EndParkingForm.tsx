@@ -15,6 +15,7 @@ import pricingApi from "../../../api/rules/api";
 import { useAuthStore } from "../../../store/authStore";
 import { supabase } from "../../../services/supabase";
 import { useNavigation } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 
 type Props = {
   session?: any;
@@ -201,7 +202,6 @@ export default function EndParkingForm({
     else navigation.goBack();
   };
 
-
   if (!activeSession) {
     return (
       <Text style={{ marginTop: 40, textAlign: "center" }}>Loading...</Text>
@@ -218,6 +218,27 @@ export default function EndParkingForm({
     const ampm = hours >= 12 ? "PM" : "AM";
     hours = hours % 12 || 12;
     return `${hours}:${minutes} ${ampm}`;
+  };
+
+  const formatDuration = (start: string | Date, end: string | Date): string => {
+    if (!start || !end) return "-";
+    const startTime = new Date(start).getTime();
+    const endTime = new Date(end).getTime();
+    const diffMs = Math.max(0, endTime - startTime);
+
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days} ${days === 1 ? "Day" : "Days"}`);
+    if (hours > 0) parts.push(`${hours} ${hours === 1 ? "Hour" : "Hours"}`);
+    if (minutes > 0 || (days === 0 && hours === 0)) {
+      parts.push(`${minutes} ${minutes === 1 ? "Minute" : "Minutes"}`);
+    }
+
+    return parts.join(", ");
   };
 
   return (
@@ -271,6 +292,15 @@ export default function EndParkingForm({
             <Text style={styles.timeText}>{formatTime(endTime)}</Text>
           </View>
         </View>
+      </View>
+
+      {/* Duration */}
+      <Text style={styles.label}>Duration</Text>
+      <View style={styles.durationBox}>
+        <Ionicons name="time-outline" size={18} color="#7C3AED" />
+        <Text style={styles.durationValueText}>
+          {formatDuration(activeSession.start_time, endTime)}
+        </Text>
       </View>
 
       {/* Payment Type */}
@@ -535,6 +565,23 @@ const styles = StyleSheet.create({
   toggleTextActive: {
     color: "#111827",
     fontWeight: "700",
+  },
+  durationBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3E8FF",
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  durationValueText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#6D28D9",
+    flex: 1,
   },
   actionRow: {
     flexDirection: "row",

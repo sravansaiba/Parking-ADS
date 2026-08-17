@@ -15,11 +15,13 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useCardStore } from "../cardStore";
-import { 
+import {
   fetchCards as apiFetchCards,
   toggleCardStatus as apiToggleStatus,
   deleteCard as apiDeleteCard
@@ -29,9 +31,11 @@ import { captureRef } from "react-native-view-shot";
 import * as Sharing from 'expo-sharing';
 import * as Print from "expo-print";
 import * as FileSystem from "expo-file-system/legacy";
+import { useAuthStore } from "../../../store/authStore";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-const LIMIT = 14;
+const PAGE_SIZE_OPTIONS = [10, 15, 20, 25];
+const DEFAULT_PAGE_SIZE = 15;
 
 // const generatePDFFromImage = async (imageUri: string): Promise<string> => {
 //   try {
@@ -105,7 +109,6 @@ const generatePDFFromImage = async (imageUri: string): Promise<string> => {
     throw error;
   }
 };
-
 
 const downloadSinglePDF = async (pdfPath: string, fileName: string) => {
   try {
@@ -227,21 +230,60 @@ interface TenantDescription {
   footer: string;
 }
 
+interface BatchGroup {
+  id: string;
+  timestamp: string;
+  dateLabel: string;
+  count: number;
+  cardIds: string[];
+  cards: CardItem[];
+}
+
+function formatBatchDate(dateString: string): string {
+  if (!dateString) return "Unknown Date";
+  const date = new Date(dateString);
+  const now = new Date();
+
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  let hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12 || 12;
+  const timeStr = `${hours}:${minutes} ${ampm}`;
+
+  if (isToday) return `Today, ${timeStr}`;
+  if (isYesterday) return `Yesterday, ${timeStr}`;
+
+  const day = String(date.getDate()).padStart(2, "0");
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = monthNames[date.getMonth()];
+  const year = date.getFullYear();
+
+  return `${day} ${month} ${year}, ${timeStr}`;
+}
+
 interface ViewCardsProps {
   showMenu?: boolean;
   setShowMenu?: (show: boolean) => void;
 }
 
 export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JSX.Element {
-  const { 
-    tenant, 
-    fetchTenantDetails, 
-    updateTenantDescription, 
-    selectedLanguage, 
-    setLanguage, 
-    setQRCodes, 
+  const role = useAuthStore((state) => state.user?.role);
+  const isStaff = role?.toLowerCase() === "staff";
+
+  const {
+    tenant,
+    fetchTenantDetails,
+    updateTenantDescription,
+    selectedLanguage,
+    setLanguage,
+    setQRCodes,
     getRecentBatches,
-    getCardsByBatch 
+    getCardsByBatch
   } = useCardStore();
   const tenantId = tenant?.id ?? "b457b988-9952-4dbe-9a6d-6fa1385a7785";
 
@@ -265,6 +307,7 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [showBatchMenu, setShowBatchMenu] = useState<boolean>(false);
   const [allCardsForBatch, setAllCardsForBatch] = useState<CardItem[]>([]);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
 
   const previewRef = useRef<View | null>(null);
   const hiddenRefs = useRef<Record<string, View | null>>({});
@@ -306,7 +349,61 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
     fetchAllForBatch();
   }, [fetchAllForBatch]);
 
-  const loadCards = useCallback(async (p = 1, showLoader = true) => {
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setDropdownOpen(false);
+      };
+    }, [])
+  );
+
+  const groupedBatches = useMemo<BatchGroup[]>(() => {
+    if (!allCardsForBatch || allCardsForBatch.length === 0) return [];
+
+    const map = new Map<string, { id: string; timestamp: string; dateLabel: string; cards: CardItem[] }>();
+
+    for (const card of allCardsForBatch) {
+      if (!card.created_at) continue;
+
+      let key = card.generation_batch_id;
+      if (!key) {
+        const d = new Date(card.created_at);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const hh = String(d.getHours()).padStart(2, "0");
+        const min = String(d.getMinutes()).padStart(2, "0");
+        key = `batch_${yyyy}${mm}${dd}_${hh}${min}`;
+      }
+
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          timestamp: card.created_at,
+          dateLabel: formatBatchDate(card.created_at),
+          cards: [],
+        });
+      }
+      map.get(key)!.cards.push(card);
+    }
+
+    const batches = Array.from(map.values()).map((b) => ({
+      id: b.id,
+      timestamp: b.timestamp,
+      dateLabel: b.dateLabel,
+      count: b.cards.length,
+      cardIds: b.cards.map((c) => c.id),
+      cards: b.cards,
+    }));
+
+    batches.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return batches;
+  }, [allCardsForBatch]);
+
+  const loadCards = useCallback(async (p = 1, showLoader = true, overrideSize?: number) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     if (showLoader) setLoading(true);
@@ -314,27 +411,35 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
       const options: { status?: "active" | "inactive"; search?: string } = {};
       if (filterStatus !== "all" && filterStatus !== "recent") options.status = filterStatus;
       if (search.trim().length > 0) options.search = search.trim();
-      
-      const res = await apiFetchCards(tenantId, p, LIMIT, options);
+
+      const currentSize = overrideSize ?? pageSize;
+      const res = await apiFetchCards(tenantId, p, currentSize, options);
       let newCards = (res.items ?? []) as CardItem[];
-      
-      // If filter is "recent", show only cards created in last 24 hours
+
+      // If filter is "recent", show cards from the selected batch or most recent batch
       if (filterStatus === "recent") {
-        const oneDayAgo = new Date();
-        oneDayAgo.setHours(oneDayAgo.getHours() - 24);
-        newCards = newCards.filter(card => {
-          if (!card.created_at) return false;
-          const cardDate = new Date(card.created_at);
-          return cardDate >= oneDayAgo;
-        });
+        const sourceList = (allCardsForBatch && allCardsForBatch.length > 0) ? allCardsForBatch : newCards;
+
+        let targetBatch: BatchGroup | undefined;
+        if (selectedBatchId) {
+          targetBatch = groupedBatches.find(b => b.id === selectedBatchId);
+        }
+        if (!targetBatch && groupedBatches.length > 0) {
+          targetBatch = groupedBatches[0];
+        }
+
+        if (targetBatch) {
+          const batchSet = new Set(targetBatch.cardIds);
+          newCards = sourceList.filter(card => batchSet.has(card.id));
+        }
       }
-      
+
       setCards(newCards);
       setTotalCount(filterStatus === "recent" ? newCards.length : (res.count ?? 0));
-      setQRCodes(newCards.map(card => ({ 
-        ...card, 
-        tenant_id: card.tenant_id ?? tenantId, 
-        label: card.label ?? undefined, 
+      setQRCodes(newCards.map(card => ({
+        ...card,
+        tenant_id: card.tenant_id ?? tenantId,
+        label: card.label ?? undefined,
         created_at: card.created_at ?? new Date().toISOString(),
         generated_at: card.generated_at,
         generation_batch_id: card.generation_batch_id
@@ -345,7 +450,7 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
       loadingRef.current = false;
       if (showLoader) setLoading(false);
     }
-  }, [tenantId, filterStatus, search, setQRCodes]);
+  }, [tenantId, filterStatus, search, pageSize, setQRCodes, selectedBatchId, groupedBatches, allCardsForBatch]);
 
   useEffect(() => { loadCards(1, true); setPage(1); }, [tenantId]);
   useEffect(() => { if (page > 1) loadCards(page, true); }, [page]);
@@ -378,6 +483,10 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
   }, [page, loadCards, previewCard]);
 
   const handleDelete = useCallback(async (id: string) => {
+    if (isStaff) {
+      Alert.alert("Permission Denied", "Staff members do not have permission to delete cards.");
+      return;
+    }
     try {
       await apiDeleteCard(id);
       loadCards(page, true);
@@ -385,7 +494,7 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
     } catch (err) {
       console.error("Delete failed:", err);
     }
-  }, [page, loadCards]);
+  }, [page, loadCards, isStaff]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -393,6 +502,31 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
     await loadCards(1, true);
     setRefreshing(false);
   }, [loadCards]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  const goNext = () => {
+    if (page < totalPages) {
+      const nextP = page + 1;
+      setPage(nextP);
+      loadCards(nextP, true);
+    }
+  };
+
+  const goPrev = () => {
+    if (page > 1) {
+      const prevP = page - 1;
+      setPage(prevP);
+      loadCards(prevP, true);
+    }
+  };
+
+  const onPageSizeChange = (size: number) => {
+    setPageSize(size);
+    setPage(1);
+    setDropdownOpen(false);
+    loadCards(1, true, size);
+  };
 
   const handleDownloadSingleFromPreview = useCallback(async () => {
     if (!previewCard || !previewRef.current) return;
@@ -413,28 +547,25 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
     cancelDownload.current = false;
     setDownloadLoading(true);
     setShowBatchMenu(false);
-    
+
     try {
       let allItems: CardItem[] = [];
-      
+
       if (batchId) {
-        // Download cards from last 24 hours
-        const oneDayAgo = new Date();
-        oneDayAgo.setHours(oneDayAgo.getHours() - 24);
-        allItems = allCardsForBatch.filter(card => {
-          if (!card.created_at) return false;
-          const cardDate = new Date(card.created_at);
-          return cardDate >= oneDayAgo;
-        });
+        // Download cards from selected batch
+        const targetBatch = groupedBatches.find(b => b.id === batchId);
+        if (targetBatch) {
+          allItems = targetBatch.cards;
+        }
       } else {
         // Download all cards
-        const res = await apiFetchCards(tenantId, 1, 1000, { 
-          status: filterStatus !== "all" && filterStatus !== "recent" ? filterStatus : undefined, 
-          search: search.trim() 
+        const res = await apiFetchCards(tenantId, 1, 1000, {
+          status: filterStatus !== "all" && filterStatus !== "recent" ? filterStatus : undefined,
+          search: search.trim()
         });
         allItems = (res.items ?? []) as CardItem[];
       }
-      
+
       if (allItems.length === 0) {
         setDownloadLoading(false);
         return;
@@ -447,16 +578,16 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
           console.log("Download cancelled by user");
           break;
         }
-        
+
         const chunk = allItems.slice(i, i + CHUNK_SIZE);
         hiddenRefs.current = {};
         setBatchItems(chunk);
         await new Promise(r => setTimeout(r, 6000));
-        
+
         const imagePaths: string[] = [];
         for (const item of chunk) {
           if (cancelDownload.current) break;
-          
+
           const ref = hiddenRefs.current[item.id];
           if (ref) {
             try {
@@ -468,13 +599,13 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
             }
           }
         }
-        
+
         if (cancelDownload.current) break;
-        
+
         if (imagePaths.length > 0) {
           const pdfPath = await createMultiPagePDF(imagePaths);
-          const fileName = batchId 
-            ? `QR_Recent_Cards_${Math.floor(i / CHUNK_SIZE) + 1}`
+          const fileName = batchId
+            ? `QR_Batch_Cards_${Math.floor(i / CHUNK_SIZE) + 1}`
             : `QR_All_Cards_${Math.floor(i / CHUNK_SIZE) + 1}`;
           await downloadSinglePDF(pdfPath, fileName);
         }
@@ -487,48 +618,77 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
       setBatchItems([]);
       cancelDownload.current = false;
     }
-  }, [tenantId, filterStatus, search, allCardsForBatch]);
+  }, [tenantId, filterStatus, search, groupedBatches]);
 
   const handleSaveTerms = async () => {
     if (!tenant) return;
-    const updatedDescription = { 
-      ...tenant.description, 
-      [selectedLanguage]: { 
-        heading: editHeading, 
-        points: editPoints, 
-        footer: tenant.description[selectedLanguage]?.footer || "", 
-      }, 
+    const updatedDescription = {
+      ...tenant.description,
+      [selectedLanguage]: {
+        heading: editHeading,
+        points: editPoints,
+        footer: tenant.description[selectedLanguage]?.footer || "",
+      },
     };
     await updateTenantDescription(updatedDescription);
     setShowEditTerms(false);
   };
 
-  const recentBatches = useMemo(() => {
-    // Get cards from last 24 hours from ALL cards
-    const oneDayAgo = new Date();
-    oneDayAgo.setHours(oneDayAgo.getHours() - 24);
-    
-    const recentCards = allCardsForBatch.filter(card => {
-      if (!card.created_at) return false;
-      const cardDate = new Date(card.created_at);
-      return cardDate >= oneDayAgo;
-    });
+  const handleDeleteBatch = useCallback((batch: BatchGroup) => {
+    if (isStaff) {
+      Alert.alert("Permission Denied", "Staff members do not have permission to delete cards.");
+      return;
+    }
 
-    if (recentCards.length === 0) return [];
-
-    return [{
-      id: 'recent_24h',
-      timestamp: new Date().toISOString(),
-      count: recentCards.length,
-      cardIds: recentCards.map(c => c.id)
-    }];
-  }, [allCardsForBatch]);
+    Alert.alert(
+      "Confirm Batch Deletion",
+      `Are you sure you want to delete this batch?\n\n📅 ${batch.dateLabel}\n🎴 ${batch.count} Cards\n\nThis will delete all ${batch.count} cards in this generation batch.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Batch",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Final Confirmation",
+              `PERMANENT DELETION:\nAre you sure you want to permanently delete all ${batch.count} cards generated on "${batch.dateLabel}"?`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Yes, Delete Permanently",
+                  style: "destructive",
+                  onPress: async () => {
+                    setLoading(true);
+                    try {
+                      for (const cardId of batch.cardIds) {
+                        await apiDeleteCard(cardId);
+                      }
+                      setShowBatchMenu(false);
+                      setSelectedBatchId(null);
+                      await fetchAllForBatch();
+                      await loadCards(1, true);
+                      Alert.alert("Success", `Successfully deleted ${batch.count} cards from batch.`);
+                    } catch (err) {
+                      console.error("Batch delete failed:", err);
+                      Alert.alert("Error", "Failed to delete some cards in batch.");
+                    } finally {
+                      setLoading(false);
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  }, [isStaff, fetchAllForBatch, loadCards]);
 
   const renderItem = useCallback(({ item }: { item: CardItem }) => (
-    <TouchableOpacity 
-      activeOpacity={0.95} 
-      onLongPress={() => { setSelectionMode(true); toggleSelect(item.id); }} 
-      onPress={() => selectionMode ? toggleSelect(item.id) : setPreviewCard(item)} 
+    <TouchableOpacity
+      activeOpacity={0.95}
+      onLongPress={() => { setSelectionMode(true); toggleSelect(item.id); }}
+      onPress={() => selectionMode ? toggleSelect(item.id) : setPreviewCard(item)}
       style={[styles.tile, !item.active && styles.tileInactive, selected.has(item.id) && styles.tileSelected]}
     >
       <View style={styles.tileContent}>
@@ -558,12 +718,12 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
             <Ionicons name="search-outline" size={16} color="#64748B" />
-            <TextInput 
-              value={search} 
-              onChangeText={setSearch} 
-              placeholder="Search code..." 
-              placeholderTextColor="#94A3B8" 
-              style={styles.searchInput} 
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search code..."
+              placeholderTextColor="#94A3B8"
+              style={styles.searchInput}
             />
             {search.length > 0 && (
               <TouchableOpacity onPress={() => setSearch("")}>
@@ -571,17 +731,17 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity 
-            style={styles.iconControl} 
+          <TouchableOpacity
+            style={styles.iconControl}
             onPress={() => setShowFilterMenu(true)}
           >
             <Ionicons name="filter" size={18} color="#475569" />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.iconControl, selectionMode && styles.iconControlActive]} 
-            onPress={() => { 
-              setSelectionMode(!selectionMode); 
-              if (selectionMode) setSelected(new Set()); 
+          <TouchableOpacity
+            style={[styles.iconControl, selectionMode && styles.iconControlActive]}
+            onPress={() => {
+              setSelectionMode(!selectionMode);
+              if (selectionMode) setSelected(new Set());
             }}
           >
             <Ionicons name="checkmark-done" size={18} color={selectionMode ? "#fff" : "#475569"} />
@@ -597,9 +757,9 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
             </Text>
           </TouchableOpacity>
           <View style={styles.selectionActions}>
-            <TouchableOpacity 
-              style={[styles.bulkBtn, downloadLoading && styles.bulkBtnDisabled]} 
-              onPress={() => handleBulkDownload()} 
+            <TouchableOpacity
+              style={[styles.bulkBtn, downloadLoading && styles.bulkBtnDisabled]}
+              onPress={() => handleBulkDownload()}
               disabled={downloadLoading}
             >
               {downloadLoading ? (
@@ -608,14 +768,29 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
                 <Text style={styles.bulkBtnText}>Download ({totalCount})</Text>
               )}
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.bulkBtn, styles.bulkBtnCancel]} 
-              onPress={() => { setSelectionMode(false); setSelected(new Set()); }} 
+            <TouchableOpacity
+              style={[styles.bulkBtn, styles.bulkBtnCancel]}
+              onPress={() => { setSelectionMode(false); setSelected(new Set()); }}
               disabled={downloadLoading}
             >
               <Ionicons name="close" size={16} color="#fff" />
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {filterStatus === "recent" && (
+        <View style={styles.batchBanner}>
+          <Ionicons name="layers" size={18} color="#F97316" />
+          <Text style={styles.batchBannerText} numberOfLines={1}>
+            Batch: {groupedBatches.find(b => b.id === selectedBatchId)?.dateLabel || groupedBatches[0]?.dateLabel || "Recent"} ({totalCount} cards)
+          </Text>
+          <TouchableOpacity
+            style={styles.changeBatchBtn}
+            onPress={() => setShowBatchMenu(true)}
+          >
+            <Text style={styles.changeBatchBtnText}>Change Batch</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -625,11 +800,11 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
             <ActivityIndicator size="large" color="#4F46E5" />
           </View>
         ) : (
-          <FlatList 
-            data={cards} 
-            keyExtractor={i => i.id} 
-            renderItem={renderItem} 
-            contentContainerStyle={styles.listContent} 
+          <FlatList
+            data={cards}
+            keyExtractor={i => i.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -643,31 +818,99 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
                 <Ionicons name="file-tray-outline" size={48} color="#CBD5E1" />
                 <Text style={styles.emptyText}>No cards found</Text>
               </View>
-            )} 
+            )}
           />
         )}
       </View>
 
-      <View style={styles.footer}>
-        <TouchableOpacity 
-          disabled={page === 1} 
-          onPress={() => setPage(p => Math.max(1, p - 1))} 
-          style={[styles.paginationBtn, page === 1 && styles.paginationBtnDisabled]}
-        >
-          <Ionicons name="chevron-back" size={20} color={page === 1 ? "#CBD5E1" : "#F97316"} />
-        </TouchableOpacity>
-        
-        <Text style={styles.pageText}>
-          Showing {((page - 1) * LIMIT) + 1}-{Math.min(page * LIMIT, totalCount)} of {totalCount}
+      {/* Reports-Style Pagination Bar */}
+      <View style={styles.paginationBar}>
+        {/* LEFT: page size dropdown */}
+        <View style={styles.dropdownWrapper}>
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => setDropdownOpen((v) => !v)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dropdownValue}>{pageSize}</Text>
+            <Ionicons
+              name={dropdownOpen ? "chevron-up" : "chevron-down"}
+              size={13}
+              color="#F97316"
+            />
+          </TouchableOpacity>
+
+          {dropdownOpen && (
+            <View style={styles.dropdownMenu}>
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <TouchableOpacity
+                  key={size}
+                  onPress={() => onPageSizeChange(size)}
+                  style={[
+                    styles.dropdownItem,
+                    pageSize === size && styles.dropdownItemActive,
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownItemText,
+                      pageSize === size && styles.dropdownItemTextActive,
+                    ]}
+                  >
+                    {size}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <Text style={styles.perPageLabel}>/ page</Text>
+
+        <View style={{ flex: 1 }} />
+
+        {/* CENTER: total count */}
+        <Text style={styles.totalCount}>
+          <Text style={styles.totalCountBold}>{totalCount}</Text> total
         </Text>
 
-        <TouchableOpacity 
-          disabled={cards.length < LIMIT} 
-          onPress={() => setPage(p => p + 1)} 
-          style={[styles.paginationBtn, cards.length < LIMIT && styles.paginationBtnDisabled]}
-        >
-          <Ionicons name="chevron-forward" size={20} color={cards.length < LIMIT ? "#CBD5E1" : "#F97316"} />
-        </TouchableOpacity>
+        <View style={{ flex: 1 }} />
+
+        {/* RIGHT: prev · page x/y · next */}
+        <View style={styles.pageNavRow}>
+          <TouchableOpacity
+            onPress={goPrev}
+            disabled={page === 1}
+            style={[styles.navBtn, page === 1 && styles.navBtnDisabled]}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={15}
+              color={page === 1 ? "#d1d5db" : "#F97316"}
+            />
+          </TouchableOpacity>
+
+          <Text style={styles.pageInfo}>
+            <Text style={styles.pageInfoBold}>{page}</Text>
+            <Text style={styles.pageInfoSlash}> / </Text>
+            <Text style={styles.pageInfoBold}>{totalPages}</Text>
+          </Text>
+
+          <TouchableOpacity
+            onPress={goNext}
+            disabled={page >= totalPages}
+            style={[styles.navBtn, page >= totalPages && styles.navBtnDisabled]}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={15}
+              color={page >= totalPages ? "#d1d5db" : "#F97316"}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Modal visible={!!previewCard} transparent animationType="fade" onRequestClose={() => setPreviewCard(null)}>
@@ -679,22 +922,22 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
             <ScrollView contentContainerStyle={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <View collapsable={false} ref={previewRef} style={styles.previewWrap}>
                 {previewCard && (
-                  <QRCardTemplate 
-                    code={previewCard.code_text} 
-                    label={previewCard.label ?? "QR Card"} 
-                    tenantName={tenant?.name ?? ""} 
-                    address={previewCard.address ?? tenant?.address} 
-                    description={safeDescription} 
-                    language={selectedLanguage as any ?? "en"} 
+                  <QRCardTemplate
+                    code={previewCard.code_text}
+                    label={previewCard.label ?? "QR Card"}
+                    tenantName={tenant?.name ?? ""}
+                    address={previewCard.address ?? tenant?.address}
+                    description={safeDescription}
+                    language={selectedLanguage as any ?? "en"}
                   />
                 )}
               </View>
               <Text style={styles.modalCode}>{previewCard?.code_text.replace('APK-', '')}</Text>
 
               <View style={styles.modalActions}>
-                <TouchableOpacity 
-                  style={styles.primaryBtn} 
-                  onPress={handleDownloadSingleFromPreview} 
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={handleDownloadSingleFromPreview}
                   disabled={downloadLoading}
                 >
                   {downloadLoading ? (
@@ -706,17 +949,19 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
                     </>
                   )}
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.deleteBtn} 
-                  onPress={() => previewCard && handleDelete(previewCard.id)} 
-                  disabled={downloadLoading}
-                >
-                  <Ionicons name="trash-outline" size={18} color="#fff" />
-                  <Text style={styles.deleteBtnText}>Delete</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.secondaryBtn} 
-                  onPress={() => setPreviewCard(null)} 
+                {!isStaff && (
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => previewCard && handleDelete(previewCard.id)}
+                    disabled={downloadLoading}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#fff" />
+                    <Text style={styles.deleteBtnText}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.secondaryBtn}
+                  onPress={() => setPreviewCard(null)}
                   disabled={downloadLoading}
                 >
                   <Text style={styles.secondaryBtnText}>Close</Text>
@@ -729,24 +974,24 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
 
       <View pointerEvents="none" style={{ position: "absolute", left: -SCREEN_WIDTH * 5, top: 0 }}>
         {batchItems.map((item) => (
-          <View 
-            key={`batch-${item.id}`} 
-            collapsable={false} 
-            ref={r => { hiddenRefs.current[item.id] = r; }} 
+          <View
+            key={`batch-${item.id}`}
+            collapsable={false}
+            ref={r => { hiddenRefs.current[item.id] = r; }}
             style={{
               width: SCREEN_WIDTH,
-              backgroundColor: "white",   
+              backgroundColor: "white",
               alignItems: "center",
               justifyContent: "flex-start"
             }}
           >
-            <QRCardTemplate 
-              code={item.code_text} 
-              label={item.label ?? "QR Card"} 
-              tenantName={tenant?.name ?? ""} 
-              address={item.address ?? tenant?.address} 
-              description={safeDescription} 
-              language={selectedLanguage as any ?? "en"} 
+            <QRCardTemplate
+              code={item.code_text}
+              label={item.label ?? "QR Card"}
+              tenantName={tenant?.name ?? ""}
+              address={item.address ?? tenant?.address}
+              description={safeDescription}
+              language={selectedLanguage as any ?? "en"}
             />
           </View>
         ))}
@@ -757,8 +1002,8 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
           <View style={styles.progressCard}>
             <ActivityIndicator size="large" color="#4F46E5" />
             <Text style={styles.progressText}>Processing cards...</Text>
-            <TouchableOpacity 
-              style={styles.cancelDownloadBtn} 
+            <TouchableOpacity
+              style={styles.cancelDownloadBtn}
               onPress={() => {
                 cancelDownload.current = true;
                 setDownloadLoading(false);
@@ -778,19 +1023,19 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
         <View style={styles.filterMenuCenter}>
           <View style={styles.filterMenu}>
             <Text style={styles.filterMenuTitle}>Filter Cards</Text>
-            
+
             {[
               { key: "all", label: "All Cards", icon: "apps-outline" },
               { key: "active", label: "Active Only", icon: "checkmark-circle-outline" },
               { key: "inactive", label: "Inactive Only", icon: "close-circle-outline" },
               { key: "recent", label: "Recent Generated", icon: "time-outline" }
             ].map((filter) => (
-              <TouchableOpacity 
+              <TouchableOpacity
                 key={filter.key}
-                style={[styles.filterOption, filterStatus === filter.key && styles.filterOptionActive]} 
-                onPress={() => { 
-                  setFilterStatus(filter.key as any); 
-                  setPage(1); 
+                style={[styles.filterOption, filterStatus === filter.key && styles.filterOptionActive]}
+                onPress={() => {
+                  setFilterStatus(filter.key as any);
+                  setPage(1);
                   loadCards(1, true);
                   setShowFilterMenu(false);
                 }}
@@ -813,9 +1058,9 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
         <View style={styles.menuModalCenter}>
           <View style={styles.menuModal}>
             <Text style={styles.menuTitle}>Settings & Downloads</Text>
-            
-            <TouchableOpacity 
-              style={styles.menuOption} 
+
+            <TouchableOpacity
+              style={styles.menuOption}
               onPress={() => { setShowMenu?.(false); setShowLanguageModal(true); }}
             >
               <Ionicons name="language" size={22} color="#4F46E5" />
@@ -828,8 +1073,8 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
               <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.menuOption} 
+            <TouchableOpacity
+              style={styles.menuOption}
               onPress={() => { setShowMenu?.(false); setShowEditTerms(true); }}
             >
               <Ionicons name="create-outline" size={22} color="#4F46E5" />
@@ -842,8 +1087,8 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
 
             <View style={styles.menuDivider} />
 
-            <TouchableOpacity 
-              style={styles.menuOption} 
+            <TouchableOpacity
+              style={styles.menuOption}
               onPress={() => { setShowMenu?.(false); setShowBatchMenu(true); }}
             >
               <Ionicons name="download-outline" size={22} color="#F97316" />
@@ -861,58 +1106,81 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
         </View>
       </Modal>
 
-      <Modal 
-        visible={showBatchMenu} 
-        transparent 
-        animationType="fade" 
+      <Modal
+        visible={showBatchMenu}
+        transparent
+        animationType="fade"
         onRequestClose={() => setShowBatchMenu(false)}
       >
         <View style={styles.modalOverlay} />
         <View style={styles.batchMenuCenter}>
           <View style={styles.batchMenu}>
-            <Text style={styles.filterMenuTitle}>Download Options</Text>
-            
-            <TouchableOpacity 
-              style={styles.batchOption} 
+            <Text style={styles.filterMenuTitle}>Generation Batches & Actions</Text>
+
+            <TouchableOpacity
+              style={styles.batchOption}
               onPress={() => handleBulkDownload()}
               disabled={downloadLoading}
             >
-              <Ionicons name="download" size={22} color="#4F46E5" />
+              <Ionicons name="download-outline" size={22} color="#4F46E5" />
               <View style={styles.menuOptionContent}>
                 <Text style={styles.menuOptionText}>Download All Cards</Text>
-                <Text style={styles.menuOptionSubtext}>{totalCount} total cards</Text>
+                <Text style={styles.menuOptionSubtext}>{allCardsForBatch.length || totalCount} total cards</Text>
               </View>
             </TouchableOpacity>
 
-            {recentBatches.length > 0 && (
+            {groupedBatches.length > 0 && (
               <>
                 <View style={styles.menuDivider} />
-                <Text style={styles.batchSectionTitle}>Recent Cards</Text>
-                
-                {recentBatches.map((batch) => (
-                  <TouchableOpacity 
-                    key={batch.id}
-                    style={styles.batchOption} 
-                    onPress={() => handleBulkDownload(batch.id)}
-                    disabled={downloadLoading}
-                  >
-                    <Ionicons name="time-outline" size={22} color="#F97316" />
-                    <View style={styles.menuOptionContent}>
-                      <Text style={styles.menuOptionText}>
-                        Recent Cards (Last 24h)
-                      </Text>
-                      <Text style={styles.menuOptionSubtext}>{batch.count} cards</Text>
+                <Text style={styles.batchSectionTitle}>Card Generation Batches</Text>
+
+                <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={true}>
+                  {groupedBatches.map((batch) => (
+                    <View key={batch.id} style={styles.batchRowCard}>
+                      <TouchableOpacity
+                        style={styles.batchRowMain}
+                        onPress={() => {
+                          setSelectedBatchId(batch.id);
+                          setFilterStatus("recent");
+                          setShowBatchMenu(false);
+                        }}
+                      >
+                        <Ionicons name="layers-outline" size={20} color="#F97316" />
+                        <View style={styles.menuOptionContent}>
+                          <Text style={styles.menuOptionText}>{batch.dateLabel}</Text>
+                          <Text style={styles.menuOptionSubtext}>{batch.count} cards</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      <View style={styles.batchRowActions}>
+                        <TouchableOpacity
+                          style={styles.batchActionIconBtn}
+                          onPress={() => handleBulkDownload(batch.id)}
+                          disabled={downloadLoading}
+                        >
+                          <Ionicons name="download-outline" size={18} color="#4F46E5" />
+                        </TouchableOpacity>
+
+                        {!isStaff && (
+                          <TouchableOpacity
+                            style={[styles.batchActionIconBtn, styles.batchDeleteIconBtn]}
+                            onPress={() => handleDeleteBatch(batch)}
+                          >
+                            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
-                  </TouchableOpacity>
-                ))}
+                  ))}
+                </ScrollView>
               </>
             )}
 
-            <TouchableOpacity 
-              style={styles.languageModalClose} 
+            <TouchableOpacity
+              style={styles.languageModalClose}
               onPress={() => setShowBatchMenu(false)}
             >
-              <Text style={styles.languageModalCloseText}>Cancel</Text>
+              <Text style={styles.languageModalCloseText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -926,13 +1194,13 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
           <View style={styles.languageModal}>
             <Text style={styles.languageModalTitle}>Select Language</Text>
             {[
-              { code: "en", label: "English" }, 
-              { code: "hi", label: "हिंदी (Hindi)" }, 
+              { code: "en", label: "English" },
+              { code: "hi", label: "हिंदी (Hindi)" },
               { code: "te", label: "తెలుగు (Telugu)" }
             ].map(lang => (
-              <TouchableOpacity 
-                key={lang.code} 
-                style={[styles.languageOption, selectedLanguage === lang.code && styles.languageOptionActive]} 
+              <TouchableOpacity
+                key={lang.code}
+                style={[styles.languageOption, selectedLanguage === lang.code && styles.languageOptionActive]}
                 onPress={() => { setLanguage(lang.code as any); setShowLanguageModal(false); }}
               >
                 <Text style={[styles.languageOptionText, selectedLanguage === lang.code && styles.languageOptionTextActive]}>
@@ -955,42 +1223,42 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.editModalCenter}>
           <View style={styles.editModalCard}>
             <Text style={styles.languageModalTitle}>Edit Terms & Conditions</Text>
-            <TextInput 
-              value={editHeading} 
-              onChangeText={setEditHeading} 
-              placeholder="Heading" 
-              style={styles.editBox} 
+            <TextInput
+              value={editHeading}
+              onChangeText={setEditHeading}
+              placeholder="Heading"
+              style={styles.editBox}
             />
             <View style={styles.pointsContainer}>
-              <ScrollView 
-                style={styles.pointsScrollView} 
-                contentContainerStyle={styles.pointsContent} 
+              <ScrollView
+                style={styles.pointsScrollView}
+                contentContainerStyle={styles.pointsContent}
                 keyboardShouldPersistTaps="handled"
               >
                 {editPoints.map((p, index) => (
                   <View key={index} style={styles.pointRow}>
                     {editingIndex === index ? (
-                      <TextInput 
-                        value={editPoints[index]} 
-                        onChangeText={(text) => { 
-                          const updated = [...editPoints]; 
-                          updated[index] = text; 
-                          setEditPoints(updated); 
-                        }} 
-                        style={[styles.editBox, styles.pointEditInput]} 
-                        autoFocus 
+                      <TextInput
+                        value={editPoints[index]}
+                        onChangeText={(text) => {
+                          const updated = [...editPoints];
+                          updated[index] = text;
+                          setEditPoints(updated);
+                        }}
+                        style={[styles.editBox, styles.pointEditInput]}
+                        autoFocus
                       />
                     ) : (
                       <Text style={styles.pointText}>{p}</Text>
                     )}
-                    <TouchableOpacity 
-                      style={styles.pointActionBtn} 
+                    <TouchableOpacity
+                      style={styles.pointActionBtn}
                       onPress={() => setEditingIndex(index)}
                     >
                       <Ionicons name="create-outline" size={20} color="#2563EB" />
                     </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.pointActionBtn} 
+                    <TouchableOpacity
+                      style={styles.pointActionBtn}
                       onPress={() => setEditPoints(editPoints.filter((_, i) => i !== index))}
                     >
                       <Ionicons name="trash-outline" size={20} color="#DC2626" />
@@ -999,18 +1267,18 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
                 ))}
               </ScrollView>
               <View style={styles.addPointContainer}>
-                <TextInput 
-                  value={newPoint} 
-                  onChangeText={setNewPoint} 
-                  placeholder="Add new point" 
-                  style={styles.addPointInput} 
+                <TextInput
+                  value={newPoint}
+                  onChangeText={setNewPoint}
+                  placeholder="Add new point"
+                  style={styles.addPointInput}
                 />
-                <TouchableOpacity 
-                  style={styles.addPointBtn} 
-                  onPress={() => { 
-                    if (!newPoint.trim()) return; 
-                    setEditPoints([...editPoints, newPoint.trim()]); 
-                    setNewPoint(""); 
+                <TouchableOpacity
+                  style={styles.addPointBtn}
+                  onPress={() => {
+                    if (!newPoint.trim()) return;
+                    setEditPoints([...editPoints, newPoint.trim()]);
+                    setNewPoint("");
                   }}
                 >
                   <Ionicons name="add-circle" size={35} color="#f97316" />
@@ -1018,14 +1286,14 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
               </View>
             </View>
             <View style={styles.modalButtonRow}>
-              <TouchableOpacity 
-                style={[styles.secondaryBtn, styles.modalButton]} 
+              <TouchableOpacity
+                style={[styles.secondaryBtn, styles.modalButton]}
                 onPress={() => setShowEditTerms(false)}
               >
                 <Text style={styles.secondaryBtnText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.editPrimaryBtn, styles.modalButton]} 
+              <TouchableOpacity
+                style={[styles.editPrimaryBtn, styles.modalButton]}
                 onPress={handleSaveTerms}
               >
                 <Text style={styles.primaryBtnText}>Save</Text>
@@ -1040,74 +1308,74 @@ export default function ViewCards({ showMenu, setShowMenu }: ViewCardsProps): JS
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8FAFC" },
-  controlBar: { 
-    paddingHorizontal: 16, 
-    paddingTop: 12, 
-    paddingBottom: 12, 
-    backgroundColor: "#fff", 
-    borderBottomWidth: 1, 
-    borderBottomColor: "#E2E8F0" 
+  controlBar: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0"
   },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  searchBox: { 
-    flex: 1, 
-    flexDirection: "row", 
-    alignItems: "center", 
-    gap: 8, 
-    backgroundColor: "#F8FAFC", 
-    paddingHorizontal: 12, 
-    paddingVertical: 8, 
-    borderRadius: 10, 
-    borderWidth: 1, 
+  searchBox: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
     borderColor: "#E2E8F0",
     maxWidth: "75%"
   },
   searchInput: { flex: 1, color: "#0F172A", fontSize: 14, padding: 0 },
-  iconControl: { 
-    width: 38, 
-    height: 38, 
-    borderRadius: 10, 
-    backgroundColor: "#F8FAFC", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    borderWidth: 1, 
-    borderColor: "#E2E8F0" 
+  iconControl: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: "#F8FAFC",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0"
   },
   iconControlActive: {
     backgroundColor: "#4F46E5",
     borderColor: "#4F46E5"
   },
-  selectionBar: { 
-    flexDirection: "row", 
-    justifyContent: "space-between", 
-    alignItems: "center", 
-    paddingHorizontal: 16, 
-    paddingVertical: 10, 
-    backgroundColor: "#EEF2FF" 
+  selectionBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "#EEF2FF"
   },
   selectAllText: { color: "#4F46E5", fontWeight: "700", fontSize: 14 },
   selectionActions: { flexDirection: "row", gap: 8 },
-  bulkBtn: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    backgroundColor: "#4F46E5", 
-    paddingHorizontal: 12, 
-    paddingVertical: 8, 
-    borderRadius: 8 
+  bulkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#4F46E5",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8
   },
   bulkBtnDisabled: { opacity: 0.5, backgroundColor: "#9CA3AF" },
   bulkBtnCancel: { backgroundColor: "#6B7280", paddingHorizontal: 10 },
   bulkBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   cardGrid: { flex: 1, paddingHorizontal: 12 },
   listContent: { paddingTop: 12, paddingBottom: 20 },
-  tile: { 
-    backgroundColor: "#fff", 
-    borderRadius: 12, 
-    padding: 5, 
+  tile: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 5,
     paddingLeft: 15,
-    borderWidth: 1, 
+    borderWidth: 1,
     borderColor: "#E2E8F0",
-    marginBottom:7
+    marginBottom: 7
   },
   tileSelected: { borderWidth: 2, borderColor: "#4F46E5", backgroundColor: "#EEF2FF" },
   tileInactive: { opacity: 0.6 },
@@ -1117,37 +1385,37 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between"
   },
-  tileNumberContainer: { 
-    flexDirection: "row", 
-    alignItems: "center", 
+  tileNumberContainer: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     flex: 1
   },
-  tileCode: { 
-    fontWeight: "600", 
-    fontSize: 14, 
-    color: "#0F172A", 
-    flex: 1 
+  tileCode: {
+    fontWeight: "600",
+    fontSize: 14,
+    color: "#0F172A",
+    flex: 1
   },
   toggleSwitch: {
     transform: [{ scaleX: 0.9 }, { scaleY: 0.9 }]
   },
-  loadingWrap: { 
-    flex: 1, 
-    alignItems: "center", 
-    justifyContent: "center", 
-    paddingVertical: 40 
+  loadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40
   },
   emptyWrap: { padding: 40, alignItems: "center" },
   emptyText: { color: "#64748B", fontSize: 14, marginTop: 12 },
-  footer: { 
+  footer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12, 
+    paddingVertical: 12,
     paddingHorizontal: 16,
-    borderTopWidth: 1, 
-    borderColor: "#E2E8F0", 
+    borderTopWidth: 1,
+    borderColor: "#E2E8F0",
     backgroundColor: "#fff",
     gap: 12
   },
@@ -1170,69 +1438,69 @@ const styles = StyleSheet.create({
     color: "#475569",
     fontWeight: "600"
   },
-  modalOverlay: { 
-    ...StyleSheet.absoluteFillObject, 
-    backgroundColor: "rgba(0,0,0,0.6)" 
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.6)"
   },
-  modalCenter: { 
-    position: "absolute", 
-    left: 20, 
-    right: 20, 
-    top: "10%", 
-    bottom: "10%", 
-    justifyContent: "center", 
-    alignItems: "center" 
+  modalCenter: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    top: "10%",
+    bottom: "10%",
+    justifyContent: "center",
+    alignItems: "center"
   },
-  modalCard: { 
-    width: "100%", 
-    maxHeight: "100%", 
-    backgroundColor: "#fff", 
-    borderRadius: 16, 
-    padding: 20 
+  modalCard: {
+    width: "100%",
+    maxHeight: "100%",
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20
   },
   modalScroll: { alignItems: "center" },
   previewWrap: { width: "100%", alignItems: "center" },
-  modalCode: { 
-    marginTop: 16, 
-    fontWeight: "700", 
-    fontSize: 16, 
-    color: "#0F172A", 
-    marginBottom: 12 
+  modalCode: {
+    marginTop: 16,
+    fontWeight: "700",
+    fontSize: 16,
+    color: "#0F172A",
+    marginBottom: 12
   },
-  modalActions: { 
-    flexDirection: "row", 
-    gap: 8, 
-    marginTop: 12, 
-    flexWrap: "wrap", 
-    justifyContent: "center" 
+  modalActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+    flexWrap: "wrap",
+    justifyContent: "center"
   },
-  primaryBtn: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    backgroundColor: "#4F46E5", 
-    paddingHorizontal: 16, 
-    paddingVertical: 10, 
+  primaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#4F46E5",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 10,
     gap: 6
   },
   primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  deleteBtn: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    backgroundColor: "#EF4444", 
-    paddingHorizontal: 16, 
-    paddingVertical: 10, 
+  deleteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 10,
     gap: 6
   },
   deleteBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  secondaryBtn: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    backgroundColor: "#6B7280", 
-    paddingHorizontal: 16, 
-    paddingVertical: 10, 
-    borderRadius: 10 
+  secondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#6B7280",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10
   },
   secondaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   progressOverlay: {
@@ -1318,75 +1586,75 @@ const styles = StyleSheet.create({
   filterOptionTextActive: {
     color: "#4F46E5"
   },
-  menuModalCenter: { 
-    position: "absolute", 
-    right: 16, 
-    top: 60, 
-    width: 320, 
-    maxWidth: "90%" 
+  menuModalCenter: {
+    position: "absolute",
+    right: 16,
+    top: 60,
+    width: 320,
+    maxWidth: "90%"
   },
-  menuModal: { 
-    backgroundColor: "#fff", 
-    borderRadius: 16, 
-    padding: 16, 
-    ...Platform.select({ 
-      ios: { 
-        shadowColor: "#000", 
-        shadowOffset: { width: 0, height: 4 }, 
-        shadowOpacity: 0.3, 
-        shadowRadius: 8 
-      }, 
-      android: { 
-        elevation: 8 
-      } 
-    }) 
+  menuModal: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8
+      },
+      android: {
+        elevation: 8
+      }
+    })
   },
   menuTitle: { fontSize: 18, fontWeight: "700", color: "#0F172A", marginBottom: 16 },
-  menuOption: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    gap: 12, 
-    paddingVertical: 14, 
-    paddingHorizontal: 12, 
-    borderRadius: 10, 
-    backgroundColor: "#F8FAFC", 
-    marginBottom: 8 
+  menuOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "#F8FAFC",
+    marginBottom: 8
   },
   menuOptionContent: { flex: 1 },
   menuOptionText: { fontSize: 15, fontWeight: "600", color: "#0F172A" },
   menuOptionSubtext: { fontSize: 12, color: "#64748B", marginTop: 2 },
   menuDivider: { height: 1, backgroundColor: "#E2E8F0", marginVertical: 8 },
-  menuCloseBtn: { 
-    marginTop: 8, 
-    paddingVertical: 12, 
-    alignItems: "center", 
-    backgroundColor: "#F1F5F9", 
-    borderRadius: 10 
+  menuCloseBtn: {
+    marginTop: 8,
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 10
   },
   menuCloseBtnText: { fontSize: 15, fontWeight: "600", color: "#64748B" },
-  batchMenuCenter: { 
-    position: "absolute", 
-    left: 20, 
-    right: 20, 
-    top: "20%", 
+  batchMenuCenter: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    top: "20%",
     maxHeight: "60%"
   },
-  batchMenu: { 
-    backgroundColor: "#fff", 
-    borderRadius: 16, 
+  batchMenu: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
     padding: 16,
     maxHeight: "100%",
-    ...Platform.select({ 
-      ios: { 
-        shadowColor: "#000", 
-        shadowOffset: { width: 0, height: 4 }, 
-        shadowOpacity: 0.3, 
-        shadowRadius: 8 
-      }, 
-      android: { 
-        elevation: 8 
-      } 
-    }) 
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8
+      },
+      android: {
+        elevation: 8
+      }
+    })
   },
   batchSectionTitle: {
     fontSize: 14,
@@ -1398,91 +1666,153 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5
   },
-  batchOption: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    gap: 12, 
-    paddingVertical: 12, 
-    paddingHorizontal: 12, 
-    borderRadius: 10, 
-    backgroundColor: "#F8FAFC", 
-    marginBottom: 8 
+  batchOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "#F8FAFC",
+    marginBottom: 8
   },
-  languageModalCenter: { 
-    position: "absolute", 
-    left: 40, 
-    right: 40, 
-    top: "30%", 
-    justifyContent: "center", 
-    alignItems: "center" 
+  batchRowCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
-  languageModal: { 
-    width: "100%", 
-    backgroundColor: "#fff", 
-    borderRadius: 16, 
-    padding: 20 
+  batchRowMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-  languageModalTitle: { 
-    fontSize: 18, 
-    fontWeight: "700", 
-    color: "#0F172A", 
-    marginBottom: 16, 
-    textAlign: "center" 
+  batchRowActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
-  languageOption: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    justifyContent: "space-between", 
-    paddingVertical: 14, 
-    paddingHorizontal: 16, 
-    borderRadius: 10, 
-    backgroundColor: "#F8FAFC", 
-    marginBottom: 10 
+  batchActionIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  languageOptionActive: { 
-    backgroundColor: "#EEF2FF", 
-    borderWidth: 2, 
-    borderColor: "#4F46E5" 
+  batchDeleteIconBtn: {
+    backgroundColor: "#FEE2E2",
+  },
+  batchBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FFEDD5",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    gap: 8,
+  },
+  batchBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#C2410C",
+  },
+  changeBatchBtn: {
+    backgroundColor: "#F97316",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  changeBatchBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  languageModalCenter: {
+    position: "absolute",
+    left: 40,
+    right: 40,
+    top: "30%",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  languageModal: {
+    width: "100%",
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20
+  },
+  languageModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 16,
+    textAlign: "center"
+  },
+  languageOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: "#F8FAFC",
+    marginBottom: 10
+  },
+  languageOptionActive: {
+    backgroundColor: "#EEF2FF",
+    borderWidth: 2,
+    borderColor: "#4F46E5"
   },
   languageOptionText: { fontSize: 15, fontWeight: "600", color: "#475569" },
   languageOptionTextActive: { color: "#4F46E5" },
   languageModalClose: { marginTop: 8, paddingVertical: 12, alignItems: "center" },
   languageModalCloseText: { fontSize: 15, fontWeight: "600", color: "#6B7280" },
-  editModalCenter: { 
-    position: "absolute", 
-    top: "4%", 
-    bottom: "4%", 
-    left: 8, 
-    right: 8, 
-    justifyContent: "center", 
-    alignItems: "center" 
+  editModalCenter: {
+    position: "absolute",
+    top: "4%",
+    bottom: "4%",
+    left: 8,
+    right: 8,
+    justifyContent: "center",
+    alignItems: "center"
   },
-  editModalCard: { 
-    width: "100%", 
-    height: "80%", 
-    backgroundColor: "#FFFFFF", 
-    borderRadius: 20, 
-    padding: 20 
+  editModalCard: {
+    width: "100%",
+    height: "80%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20
   },
-  editBox: { 
-    height: 44, 
-    paddingHorizontal: 15, 
-    paddingVertical: 6, 
-    borderRadius: 8, 
-    borderWidth: 1, 
-    borderColor: "#E2E8F0", 
-    backgroundColor: "#F8FAFC", 
-    fontSize: 14, 
-    color: "#0F172A", 
-    marginBottom: 10 
+  editBox: {
+    height: 44,
+    paddingHorizontal: 15,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+    fontSize: 14,
+    color: "#0F172A",
+    marginBottom: 10
   },
-  editPrimaryBtn: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    backgroundColor: '#f97316', 
-    paddingHorizontal: 20, 
-    paddingVertical: 12, 
-    borderRadius: 10 
+  editPrimaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: '#f97316',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10
   },
   pointsContainer: { flex: 1, marginBottom: 16 },
   pointsScrollView: { flex: 1, maxHeight: 300 },
@@ -1491,28 +1821,136 @@ const styles = StyleSheet.create({
   pointText: { flex: 1, fontSize: 14, color: "#0F172A", lineHeight: 20 },
   pointEditInput: { flex: 1, height: 38, marginBottom: 0 },
   pointActionBtn: { padding: 4 },
-  addPointContainer: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    gap: 8, 
-    paddingTop: 12, 
-    borderTopWidth: 1, 
-    borderTopColor: "#E2E8F0", 
-    backgroundColor: "#fff" 
+  addPointContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    backgroundColor: "#fff"
   },
-  addPointInput: { 
-    flex: 1, 
-    height: 44, 
-    paddingHorizontal: 15, 
-    paddingVertical: 6, 
-    borderRadius: 8, 
-    borderWidth: 1, 
-    borderColor: "#E2E8F0", 
-    backgroundColor: "#F8FAFC", 
-    fontSize: 14, 
-    color: "#0F172A" 
+  addPointInput: {
+    flex: 1,
+    height: 44,
+    paddingHorizontal: 15,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+    fontSize: 14,
+    color: "#0F172A"
   },
   addPointBtn: { padding: 4 },
   modalButtonRow: { flexDirection: "row", width: "100%", marginTop: 16, gap: 12 },
   modalButton: { flex: 1, alignItems: "center", justifyContent: "center" },
+  paginationBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  dropdownWrapper: {
+    position: "relative",
+    zIndex: 10,
+  },
+  dropdown: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FFF3E0",
+    borderWidth: 1,
+    borderColor: "#F97316",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  dropdownValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#F97316",
+  },
+  dropdownMenu: {
+    position: "absolute",
+    bottom: 38,
+    left: 0,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    overflow: "hidden",
+    minWidth: 64,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    zIndex: 20,
+  },
+  dropdownItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  dropdownItemActive: {
+    backgroundColor: "#FFF3E0",
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  dropdownItemTextActive: {
+    color: "#F97316",
+  },
+  perPageLabel: {
+    fontSize: 12,
+    color: "#9ca3af",
+    marginLeft: 6,
+  },
+  totalCount: {
+    fontSize: 13,
+    color: "#6b7280",
+  },
+  totalCountBold: {
+    fontWeight: "800",
+    color: "#212121",
+  },
+  pageNavRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  navBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#FFF3E0",
+    borderWidth: 1,
+    borderColor: "#F97316",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  navBtnDisabled: {
+    backgroundColor: "#f9fafb",
+    borderColor: "#e5e7eb",
+  },
+  pageInfo: {
+    fontSize: 13,
+    color: "#6b7280",
+    minWidth: 36,
+    textAlign: "center",
+  },
+  pageInfoBold: {
+    fontWeight: "800",
+    color: "#212121",
+    fontSize: 13,
+  },
+  pageInfoSlash: {
+    color: "#d1d5db",
+    fontSize: 13,
+  },
 });
