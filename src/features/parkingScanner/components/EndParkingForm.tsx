@@ -259,6 +259,9 @@ export default function EndParkingForm({
             value={activeSession.qr_id?.split("-")[1]}
             editable={false}
             style={styles.inputDisabled}
+            autoComplete="off"
+            textContentType="none"
+            importantForAutofill="no"
           />
         </View>
         <View style={styles.halfCell}>
@@ -267,6 +270,9 @@ export default function EndParkingForm({
             value={activeSession.vehicle_type}
             editable={false}
             style={styles.inputDisabled}
+            autoComplete="off"
+            textContentType="none"
+            importantForAutofill="no"
           />
         </View>
       </View>
@@ -277,6 +283,9 @@ export default function EndParkingForm({
         value={activeSession.vehicle_number}
         editable={false}
         style={styles.inputDisabled}
+        autoComplete="off"
+        textContentType="none"
+        importantForAutofill="no"
       />
 
       {/* Start Time + End Time */}

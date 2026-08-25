@@ -99,6 +99,7 @@
 
 
 import { create } from 'zustand';
+import { AppState } from 'react-native';
 import { supabase } from '../services/supabase';
 
 type AppUser = {
@@ -120,33 +121,33 @@ type AuthState = {
 };
 
 const fetchAppUser = async (authUserId: string, email: string | null | undefined): Promise<AppUser | null> => {
-  const { data, error } = await supabase
-    .from('app_users')
-    .select('id, tenant_id, name, role')
-    .eq('id', authUserId)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('id, tenant_id, name, role')
+      .eq('id', authUserId)
+      .single();
 
-  if (error) {
-    console.error('AuthStore: Error fetching app_user:', error);
-    throw new Error('Could not connect to user database. Please try again.');
-  }
+    if (error || !data) {
+      console.error('AuthStore: No app_user found for', authUserId, error);
+      return null;
+    }
 
-  if (!data) {
-    console.warn('AuthStore: No app_user record found for', authUserId);
+    if (!data.tenant_id) {
+      console.warn('⚠️ User has no tenant_id in app_users table');
+    }
+
+    return {
+      id: authUserId,
+      email: email ?? null,
+      tenant_id: data.tenant_id,
+      name: data.name,
+      role: data.role,
+    };
+  } catch (err) {
+    console.error('AuthStore: Exception in fetchAppUser', err);
     return null;
   }
-
-  if (!data.tenant_id) {
-    console.warn('⚠️ User has no tenant_id in app_users table');
-  }
-
-  return {
-    id: authUserId,
-    email: email ?? null,
-    tenant_id: data.tenant_id,
-    name: data.name,
-    role: data.role,
-  };
 };
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -154,79 +155,85 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: true,
   error: null,
 
-  setUser: (user) => set({ user, loading: false, error: null }),
-
-  signOut: async () => {
-    try {
-      await supabase.auth.signOut();
-      set({ user: null, loading: false, error: null });
-    } catch (err) {
-      console.error('Sign out error:', err);
-      set({ user: null, loading: false });
-    }
-  },
+  setUser: (user: AppUser | null) => set({ user, loading: false, error: null }),
 
   clearError: () => set({ error: null }),
 
+  signOut: async () => {
+    await supabase.auth.signOut();
+    set({ user: null, loading: false, error: null });
+  },
+
+  // ✅ init() — call ONCE on app start in root component
   init: async () => {
-    // Prevent multiple initializations if already loading
-    if (!get().loading && get().user) return;
-
-    set({ loading: true, error: null });
-
-    const timeout = (ms: number) =>
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Connection timed out. Please check your internet.')), ms)
-      );
+    set({ loading: true });
 
     try {
-      // 1. Check for session with a 10s timeout
-      const sessionResult = await Promise.race([
-        supabase.auth.getSession(),
-        timeout(10000)
-      ]) as any;
+      // 1. Manage Supabase autoRefreshToken on AppState change (foreground/background)
+      AppState.addEventListener('change', (state) => {
+        if (state === 'active') {
+          supabase.auth.startAutoRefresh();
+        } else {
+          supabase.auth.stopAutoRefresh();
+        }
+      });
 
-      const session = sessionResult.data?.session;
+      // 2. Check if there's already a valid persisted session (from AsyncStorage)
+      const { data: { session } } = await supabase.auth.getSession();
 
       if (session?.user) {
-        // Fetch user data with another timeout
-        const appUser = await Promise.race([
-          fetchAppUser(session.user.id, session.user.email),
-          timeout(8000)
-        ]) as AppUser | null;
-        
-        set({ user: appUser, loading: false });
+        const appUser = await fetchAppUser(session.user.id, session.user.email);
+        if (appUser) {
+          set({ user: appUser, loading: false });
+        } else {
+          // Fallback to auth session metadata if database network call fails temporarily
+          const fallbackUser: AppUser = {
+            id: session.user.id,
+            email: session.user.email ?? null,
+            tenant_id: session.user.user_metadata?.tenant_id ?? null,
+            name: session.user.user_metadata?.name ?? session.user.email?.split('@')[0] ?? 'User',
+            role: session.user.user_metadata?.role ?? 'STAFF',
+          };
+          set({ user: fallbackUser, loading: false });
+        }
       } else {
         set({ user: null, loading: false });
       }
 
-      // 2. Setup Auth Change Listener
+      // 3. Listen for all future auth changes — TOKEN_REFRESHED, SIGNED_IN, SIGNED_OUT, etc.
       supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT' || !session?.user) {
           set({ user: null, loading: false });
           return;
         }
 
-        if (
-          event === 'SIGNED_IN' ||
-          event === 'TOKEN_REFRESHED' ||
-          event === 'USER_UPDATED'
-        ) {
-          try {
-            const appUser = await fetchAppUser(session.user.id, session.user.email);
+        if (session?.user) {
+          const appUser = await fetchAppUser(session.user.id, session.user.email);
+          if (appUser) {
             set({ user: appUser, loading: false });
-          } catch (err) {
-            console.error('Auth change user fetch error:', err);
+          } else {
+            const currentUser = get().user;
+            if (!currentUser) {
+              const fallbackUser: AppUser = {
+                id: session.user.id,
+                email: session.user.email ?? null,
+                tenant_id: session.user.user_metadata?.tenant_id ?? null,
+                name: session.user.user_metadata?.name ?? session.user.email?.split('@')[0] ?? 'User',
+                role: session.user.user_metadata?.role ?? 'STAFF',
+              };
+              set({ user: fallbackUser, loading: false });
+            } else {
+              set({ loading: false });
+            }
           }
         }
       });
-
     } catch (err: any) {
       console.error('AuthStore Initialization Error:', err);
-      set({ 
-        error: err.message || 'Failed to initialize application', 
+      set({
+        error: err?.message || 'Failed to initialize application',
         loading: false,
-        user: null // Fallback to login screen
+        user: null,
       });
     }
   },

@@ -133,6 +133,9 @@ export default function StartParkingForm({ qrId, onSuccess, onCancel }: Props) {
             value={qrId?.split('-')[1]}
             editable={false}
             style={styles.inputDisabled}
+            autoComplete="off"
+            textContentType="none"
+            importantForAutofill="no"
           />
         </View>
 
@@ -153,6 +156,10 @@ export default function StartParkingForm({ qrId, onSuccess, onCancel }: Props) {
             autoCapitalize="characters"
             placeholderTextColor="#64748b"
             editable={!loading}
+            autoComplete="off"
+            textContentType="none"
+            importantForAutofill="no"
+            autoCorrect={false}
           />
         </View>
 
