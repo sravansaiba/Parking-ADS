@@ -360,6 +360,8 @@ import {
   HourlyTraffic,
   DeleteOptions,
   DeleteResult,
+  MonthlyReportData,
+  MonthlyDailyRow,
 } from '../../types/reports';
 
 export const reportsApi = {
@@ -768,6 +770,170 @@ export const reportsApi = {
       };
     } catch (error) {
       console.error('Error getting storage info:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get Monthly Daily Breakdown Report Data (Matching Daily Table & Top Cards)
+   */
+  getMonthlyReportData: async (
+    tenantId: string,
+    year: number,
+    month: number // 0-indexed: 0 = Jan, 7 = Aug, etc.
+  ): Promise<MonthlyReportData> => {
+    try {
+      if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
+        throw new Error('Valid tenant ID is required');
+      }
+
+      const startDate = new Date(year, month, 1, 0, 0, 0, 0);
+      const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
+      const daysInMonth = endDate.getDate();
+
+      const monthName = startDate.toLocaleDateString('en-US', {
+        month: 'long',
+        year: 'numeric',
+      });
+
+      // 1. Fetch all sessions that started in this month
+      const { data: rawSessions, error } = await supabase
+        .from('parking_sessions')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .gte('start_time', startDate.toISOString())
+        .lte('start_time', endDate.toISOString())
+        .order('start_time', { ascending: true });
+
+      if (error) throw error;
+      const sessions: ParkingSession[] = rawSessions || [];
+
+      // Also fetch sessions that completed/ended in this month
+      const { data: rawEndedSessions, error: endedError } = await supabase
+        .from('parking_sessions')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('status', 'COMPLETED')
+        .gte('end_time', startDate.toISOString())
+        .lte('end_time', endDate.toISOString());
+
+      if (endedError) throw endedError;
+      const endedSessions: ParkingSession[] = rawEndedSessions || [];
+
+      // 2. Maps for daily in / out / payments
+      const dailyInMap = new Map<string, number>();
+      const dailyOutMap = new Map<string, number>();
+      const dailyCashMap = new Map<string, number>();
+      const dailyUpiMap = new Map<string, number>();
+
+      const getLocalDateKey = (isoStr: string) => {
+        const d = new Date(isoStr);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+
+      // Count Vehicles In by start_time
+      sessions.forEach((s) => {
+        if (s.start_time) {
+          const key = getLocalDateKey(s.start_time);
+          dailyInMap.set(key, (dailyInMap.get(key) || 0) + 1);
+        }
+      });
+
+      // Count Vehicles Out and Revenue by end_time
+      endedSessions.forEach((s) => {
+        if (s.end_time) {
+          const key = getLocalDateKey(s.end_time);
+          dailyOutMap.set(key, (dailyOutMap.get(key) || 0) + 1);
+
+          const amount = s.total_amount ?? 0;
+          const type = (s.payment_type || '').toUpperCase();
+
+          let cAmt = 0;
+          let uAmt = 0;
+
+          if (type === 'PARTIAL' && s.payment_info?.payments) {
+            s.payment_info.payments.forEach((p) => {
+              const pType = (p.type || '').toLowerCase();
+              const pAmount = Number(p.amount || 0);
+              if (pType === 'cash') cAmt += pAmount;
+              if (pType === 'upi' || pType === 'online') uAmt += pAmount;
+            });
+          } else if (type === 'CASH') {
+            cAmt += amount;
+          } else if (type === 'UPI' || type === 'ONLINE') {
+            uAmt += amount;
+          }
+
+          dailyCashMap.set(key, (dailyCashMap.get(key) || 0) + cAmt);
+          dailyUpiMap.set(key, (dailyUpiMap.get(key) || 0) + uAmt);
+        }
+      });
+
+      // 3. Build daily rows for every day of the month (1 to daysInMonth)
+      const dailyRows: MonthlyDailyRow[] = [];
+      let totalIn = 0;
+      let totalOut = 0;
+      let totalCash = 0;
+      let totalUpi = 0;
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const rowDate = new Date(year, month, day);
+        const dayStr = String(day).padStart(2, '0');
+        const monthNum = String(month + 1).padStart(2, '0');
+        const rawDate = `${year}-${monthNum}-${dayStr}`;
+
+        const monthShort = rowDate.toLocaleDateString('en-US', { month: 'short' });
+        const dateStr = `${monthShort} ${dayStr}, ${year}`;
+
+        const vIn = dailyInMap.get(rawDate) || 0;
+        const vOut = dailyOutMap.get(rawDate) || 0;
+        const cash = dailyCashMap.get(rawDate) || 0;
+        const upi = dailyUpiMap.get(rawDate) || 0;
+        const total = cash + upi;
+
+        totalIn += vIn;
+        totalOut += vOut;
+        totalCash += cash;
+        totalUpi += upi;
+
+        dailyRows.push({
+          sNo: day,
+          dateStr,
+          rawDate,
+          vehiclesIn: vIn,
+          vehiclesOut: vOut,
+          cash,
+          upi,
+          total,
+        });
+      }
+
+      // 4. Vehicle Breakdown & Summary
+      const summary = reportsApi.calculateSummary(sessions);
+      summary.totalRevenue = totalCash + totalUpi;
+      summary.cashAmount = totalCash;
+      summary.onlineAmount = totalUpi;
+
+      return {
+        monthName,
+        startDate,
+        endDate,
+        generatedAt: new Date(),
+        summary,
+        dailyRows,
+        monthTotal: {
+          totalIn,
+          totalOut,
+          totalCash,
+          totalUpi,
+          grandTotal: totalCash + totalUpi,
+        },
+      };
+    } catch (error) {
+      console.error('Error getting monthly report data:', error);
       throw error;
     }
   },

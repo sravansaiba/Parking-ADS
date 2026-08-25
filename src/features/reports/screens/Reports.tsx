@@ -16,6 +16,8 @@ import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import { reportsApi } from "../../../api/reports/api";
 import { exportToExcel } from "../../../utils/exportToExcel";
 import { exportToPDF } from "../../../utils/exportToPDF";
+import { exportMonthlyReportToPDF } from "../../../utils/exportMonthlyReportToPDF";
+import { exportMonthlyReportToExcel } from "../../../utils/exportMonthlyReportToExcel";
 import {
   ParkingSession,
   ReportFilters,
@@ -147,6 +149,58 @@ const Reports: React.FC = () => {
         "Unable to export PDF file. Please try again.",
       );
       console.error("PDF export error:", error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportMonthlyPDF = async () => {
+    if (!tenantId) return;
+
+    try {
+      setExporting(true);
+      setShowExportMenu(false);
+      const targetYear = filters.startDate.getFullYear();
+      const targetMonth = filters.startDate.getMonth();
+      const monthlyData = await reportsApi.getMonthlyReportData(
+        tenantId,
+        targetYear,
+        targetMonth
+      );
+      await exportMonthlyReportToPDF(monthlyData);
+      Alert.alert("Success", "Monthly Summary PDF exported successfully");
+    } catch (error: any) {
+      Alert.alert(
+        "Export Failed",
+        error.message || "Unable to export Monthly PDF report. Please try again."
+      );
+      console.error("Monthly PDF export error:", error);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportMonthlyExcel = async () => {
+    if (!tenantId) return;
+
+    try {
+      setExporting(true);
+      setShowExportMenu(false);
+      const targetYear = filters.startDate.getFullYear();
+      const targetMonth = filters.startDate.getMonth();
+      const monthlyData = await reportsApi.getMonthlyReportData(
+        tenantId,
+        targetYear,
+        targetMonth
+      );
+      await exportMonthlyReportToExcel(monthlyData);
+      Alert.alert("Success", "Monthly Summary Excel exported successfully");
+    } catch (error: any) {
+      Alert.alert(
+        "Export Failed",
+        error.message || "Unable to export Monthly Excel report. Please try again."
+      );
+      console.error("Monthly Excel export error:", error);
     } finally {
       setExporting(false);
     }
@@ -488,6 +542,59 @@ const Reports: React.FC = () => {
                 </TouchableOpacity>
               </View>
 
+              {/* Monthly Daily Breakdown Report (Matching Reference Design) */}
+              <TouchableOpacity
+                style={[styles.exportOption, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA', borderWidth: 1 }]}
+                onPress={handleExportMonthlyPDF}
+                disabled={exporting}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.exportIconContainer,
+                    { backgroundColor: "#EA580C" },
+                  ]}
+                >
+                  <Icon name="file-chart-outline" size={28} color="#FFFFFF" />
+                </View>
+                <View style={styles.exportOptionContent}>
+                  <Text style={[styles.exportOptionTitle, { color: '#C2410C', fontWeight: 'bold' }]}>
+                    Monthly Summary Report (PDF)
+                  </Text>
+                  <Text style={styles.exportOptionSubtitle}>
+                    Daily breakdown & totals ({filters.startDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})
+                  </Text>
+                </View>
+                <Icon name="chevron-right" size={24} color="#EA580C" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.exportOption}
+                onPress={handleExportMonthlyExcel}
+                disabled={exporting}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.exportIconContainer,
+                    { backgroundColor: "#EFF6FF" },
+                  ]}
+                >
+                  <Icon name="table-large" size={28} color="#2563EB" />
+                </View>
+                <View style={styles.exportOptionContent}>
+                  <Text style={styles.exportOptionTitle}>
+                    Monthly Summary (Excel)
+                  </Text>
+                  <Text style={styles.exportOptionSubtitle}>
+                    Daily sheet with Month Totals
+                  </Text>
+                </View>
+                <Icon name="chevron-right" size={24} color="#999" />
+              </TouchableOpacity>
+
+              <View style={{ height: 1, backgroundColor: '#E2E8F0', marginVertical: 8 }} />
+
               <TouchableOpacity
                 style={styles.exportOption}
                 onPress={handleExportExcel}
@@ -503,9 +610,9 @@ const Reports: React.FC = () => {
                   <Icon name="microsoft-excel" size={28} color="#4CAF50" />
                 </View>
                 <View style={styles.exportOptionContent}>
-                  <Text style={styles.exportOptionTitle}>Export as Excel</Text>
+                  <Text style={styles.exportOptionTitle}>Detailed Sessions (Excel)</Text>
                   <Text style={styles.exportOptionSubtitle}>
-                    Download .xlsx file
+                    All session records .xlsx
                   </Text>
                 </View>
                 <Icon name="chevron-right" size={24} color="#999" />
@@ -526,9 +633,9 @@ const Reports: React.FC = () => {
                   <Icon name="file-pdf-box" size={28} color="#F44336" />
                 </View>
                 <View style={styles.exportOptionContent}>
-                  <Text style={styles.exportOptionTitle}>Export as PDF</Text>
+                  <Text style={styles.exportOptionTitle}>Detailed Sessions (PDF)</Text>
                   <Text style={styles.exportOptionSubtitle}>
-                    Download .pdf file
+                    All session records .pdf
                   </Text>
                 </View>
                 <Icon name="chevron-right" size={24} color="#999" />

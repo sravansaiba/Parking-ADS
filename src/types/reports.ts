@@ -16,6 +16,7 @@ export interface ParkingSession {
       amount: number;
     }[];
     return_cash?: number;
+    original_amount?: number;
   };
   is_amount_edited?: boolean;
 }
@@ -89,3 +90,30 @@ export interface DeleteResult {
   remainingCount: number;
   spaceFreed: number;
 }
+
+export interface MonthlyDailyRow {
+  sNo: number;
+  dateStr: string;
+  rawDate: string;
+  vehiclesIn: number;
+  vehiclesOut: number;
+  cash: number;
+  upi: number;
+  total: number;
+}
+
+export interface MonthlyReportData {
+  monthName: string;
+  startDate: Date;
+  endDate: Date;
+  generatedAt: Date;
+  summary: ReportSummary;
+  dailyRows: MonthlyDailyRow[];
+  monthTotal: {
+    totalIn: number;
+    totalOut: number;
+    totalCash: number;
+    totalUpi: number;
+    grandTotal: number;
+  };
+}

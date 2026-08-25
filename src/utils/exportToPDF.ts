@@ -1,5 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import { ParkingSession, ReportSummary, ReportFilters } from '../types/reports';
 
 interface PDFExportOptions {
@@ -22,15 +23,24 @@ export const exportToPDF = async (options: PDFExportOptions): Promise<void> => {
       base64: false,
     });
 
+    const outputFileName =
+      fileName ?? `parking_report_${formatDateForFile(filters.startDate)}_to_${formatDateForFile(filters.endDate)}.pdf`;
+    const targetUri = `${FileSystem.documentDirectory}${outputFileName}`;
+
+    await FileSystem.copyAsync({
+      from: uri,
+      to: targetUri,
+    });
+
     // Share PDF
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(uri, {
+      await Sharing.shareAsync(targetUri, {
         mimeType: 'application/pdf',
         dialogTitle: 'Export Parking Report',
         UTI: 'com.adobe.pdf',
       });
     } else {
-      console.log('PDF saved at:', uri);
+      console.log('PDF saved at:', targetUri);
       throw new Error('Sharing is not available on this device');
     }
   } catch (error) {

@@ -48,6 +48,7 @@ export async function endParkingSession(payload: {
   payment_info: {
     payments: PaymentItem[];
     return_cash?: number;
+    original_amount?: number;
   };
   is_amount_edited?: boolean;
 }) {

@@ -41,6 +41,9 @@ export default function EndParkingForm({
   const [endTime] = useState(new Date());
 
   const [amountStr, setAmountStr] = useState<string>("");
+  const [calculatedAmount, setCalculatedAmount] = useState<number>(0);
+  const [isAmountEditable, setIsAmountEditable] = useState(false);
+  const [wasAmountEdited, setWasAmountEdited] = useState(false);
 
   const [paymentMode, setPaymentMode] = useState<"single" | "split">("single");
   const [singlePaymentType, setSinglePaymentType] = useState<"cash" | "upi">(
@@ -83,7 +86,7 @@ export default function EndParkingForm({
 
   // ─── Auto-calculate price ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!user || !activeSession || !activeSession.vehicle_type) {
+    if (!user || !activeSession || !activeSession.vehicle_type || isAmountEditable) {
       return;
     }
     const calculate = async () => {
@@ -98,13 +101,14 @@ export default function EndParkingForm({
           minutes,
         );
 
+        setCalculatedAmount(price);
         setAmountStr(String(price));
       } catch (e) {
         console.log("Price error:", e);
       }
     };
     calculate();
-  }, [activeSession, endTime, user]);
+  }, [activeSession, endTime, user, isAmountEditable]);
 
   // ─── Sync single received when amount or mode changes ─────────────────────
   useEffect(() => {
@@ -166,8 +170,12 @@ export default function EndParkingForm({
         session_id: activeSession.id,
         total_amount: amount,
         payment_type: paymentType,
-        payment_info: { payments, return_cash: returnCash },
-        is_amount_edited: false
+        payment_info: {
+          payments,
+          return_cash: returnCash,
+          original_amount: calculatedAmount > 0 ? calculatedAmount : amount,
+        },
+        is_amount_edited: wasAmountEdited,
       });
 
       isSubmitted.current = true;
@@ -421,13 +429,30 @@ export default function EndParkingForm({
         <TextInput
           keyboardType="numeric"
           value={amountStr}
-          editable={false}
+          editable={isAmountEditable}
+          onChangeText={(v) => {
+            if (v === "" || /^\d*\.?\d*$/.test(v)) {
+              setAmountStr(v);
+              setWasAmountEdited(true);
+            }
+          }}
           style={[
             styles.input,
-            styles.inputDisabled,
+            !isAmountEditable && styles.inputDisabled,
             { flex: 1, fontWeight: "800", fontSize: 18, color: "#111827" },
           ]}
         />
+        <TouchableOpacity
+          style={styles.editBtn}
+          onPress={() => {
+            if (isAmountEditable) setWasAmountEdited(true);
+            setIsAmountEditable((prev) => !prev);
+          }}
+        >
+          <Text style={styles.editBtnText}>
+            {isAmountEditable ? "Lock" : "Edit"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Action buttons */}

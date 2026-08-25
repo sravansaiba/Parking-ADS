@@ -909,9 +909,16 @@ const TableView: React.FC<TableViewProps> = ({ sessions, refreshing, onRefresh }
                 Cash - ₹{getPartialPaymentLines(item).cash}, Upi - ₹{getPartialPaymentLines(item).upi}
               </Text>
               {item.is_amount_edited && (
-                <View style={styles.editedBadge}>
-                  <Icon name="pencil" size={9} color="#b45309" />
-                  <Text style={styles.editedBadgeText}>Edited</Text>
+                <View style={{ marginTop: 2 }}>
+                  {item.payment_info?.original_amount != null && item.payment_info.original_amount !== item.total_amount && (
+                    <Text style={styles.originalAmountText}>
+                      Actual: ₹{item.payment_info.original_amount}
+                    </Text>
+                  )}
+                  <View style={styles.editedBadge}>
+                    <Icon name="pencil" size={9} color="#b45309" />
+                    <Text style={styles.editedBadgeText}>Edited</Text>
+                  </View>
                 </View>
               )}
             </View>
@@ -922,9 +929,16 @@ const TableView: React.FC<TableViewProps> = ({ sessions, refreshing, onRefresh }
                 <Text style={styles.amountText}>{item.total_amount ?? '0'}</Text>
               </View>
               {item.is_amount_edited && (
-                <View style={styles.editedBadge}>
-                  <Icon name="pencil" size={9} color="#b45309" />
-                  <Text style={styles.editedBadgeText}>Edited</Text>
+                <View style={{ marginTop: 2 }}>
+                  {item.payment_info?.original_amount != null && item.payment_info.original_amount !== item.total_amount && (
+                    <Text style={styles.originalAmountText}>
+                      Actual: ₹{item.payment_info.original_amount}
+                    </Text>
+                  )}
+                  <View style={styles.editedBadge}>
+                    <Icon name="pencil" size={9} color="#b45309" />
+                    <Text style={styles.editedBadgeText}>Edited</Text>
+                  </View>
                 </View>
               )}
             </View>
@@ -1482,6 +1496,29 @@ const styles = StyleSheet.create({
   filterOptionTextActive: {
     color: '#FF9800',
     fontWeight: '700',
+  },
+  editedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 3,
+    marginTop: 3,
+    alignSelf: 'flex-start',
+  },
+  editedBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  originalAmountText: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+    marginTop: 2,
+    fontWeight: '600',
   },
 });
 

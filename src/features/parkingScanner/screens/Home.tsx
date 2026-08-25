@@ -119,19 +119,36 @@ export default function HomeScreen() {
   // }, []);
 
 
-  useEffect(() => {
-  const sub = AppState.addEventListener("change", (nextState) => {
-    const prev = appStateRef.current;
-    appStateRef.current = nextState;
+  const [cameraKey, setCameraKey] = useState(0);
 
-    if (prev === "background" && nextState === "active") {
-      scannedRef.current = false;
-      isProcessingScan.current = false;
-      setScanning(false);
+  const handleOpenScanner = async () => {
+    scannedRef.current = false;
+    isProcessingScan.current = false;
+    if (!permission?.granted) {
+      const res = await requestPermission();
+      if (!res.granted) {
+        Alert.alert("Permission Required", "Camera permission is required to scan QR codes.");
+        return;
+      }
     }
-  });
-  return () => sub.remove();
-}, []);
+    setCameraKey((prev) => prev + 1);
+    setScanning(true);
+  };
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active") {
+        setScanning(false);
+      }
+      if (nextState === "active") {
+        scannedRef.current = false;
+        isProcessingScan.current = false;
+        setScanning(false);
+      }
+      appStateRef.current = nextState;
+    });
+    return () => sub.remove();
+  }, []);
 
   const refreshDashboard = async () => {
     const freshUser = useAuthStore.getState().user;
@@ -214,10 +231,6 @@ export default function HomeScreen() {
     }
   };
 
-  if (!permission?.granted && scanning) {
-    requestPermission();
-    return null;
-  }
 
   const handleStartCancel = async () => {
     setShowStartForm(false);
@@ -395,11 +408,8 @@ export default function HomeScreen() {
           {!scanning ? (
             <TouchableOpacity 
               style={styles.scanButton} 
-              onPress={() => {
-                scannedRef.current = false;
-                isProcessingScan.current = false;
-                setScanning(true);
-            }}>
+              onPress={handleOpenScanner}
+            >
               <View style={styles.scanCircle}>
                 <Text style={styles.scanIcon}>⌁</Text>
               </View>
@@ -409,6 +419,7 @@ export default function HomeScreen() {
             <View style={styles.cameraWrap}>
               <View style={styles.cameraFrame}>
                 <CameraView
+                  key={cameraKey}
                   style={styles.camera}
                   onBarcodeScanned={handleQRScan}
                   barcodeScannerSettings={{ barcodeTypes: ["qr"] }}

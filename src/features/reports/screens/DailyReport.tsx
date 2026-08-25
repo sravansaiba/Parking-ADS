@@ -15,6 +15,9 @@ import { useNavigation } from '@react-navigation/native';
 
 import { supabase } from '../../../services/supabase';
 import { useAuthStore } from '../../../store/authStore';
+import { reportsApi } from '../../../api/reports/api';
+import { exportMonthlyReportToPDF } from '../../../utils/exportMonthlyReportToPDF';
+import { Alert, ActivityIndicator } from 'react-native';
 
 const STATUS_BAR_HEIGHT =
   Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
@@ -82,12 +85,18 @@ export default function DailyReport() {
 
     (outData || []).forEach((s: any) => {
       const amount = Number(s.total_amount || 0);
+      const type = (s.payment_type || '').toUpperCase();
 
-      if (s.payment_type === 'CASH') {
+      if (type === 'PARTIAL' && s.payment_info?.payments) {
+        s.payment_info.payments.forEach((p: any) => {
+          const pType = (p.type || '').toLowerCase();
+          const pAmt = Number(p.amount || 0);
+          if (pType === 'cash') cashTotal += pAmt;
+          if (pType === 'upi' || pType === 'online') upiTotal += pAmt;
+        });
+      } else if (type === 'CASH') {
         cashTotal += amount;
-      }
-
-      if (s.payment_type === 'UPI') {
+      } else if (type === 'UPI' || type === 'ONLINE') {
         upiTotal += amount;
       }
     });
@@ -99,6 +108,30 @@ export default function DailyReport() {
   useEffect(() => {
     loadData();
   }, [date]);
+
+  const [downloadingMonth, setDownloadingMonth] = useState(false);
+
+  const handleDownloadMonthlyReport = async () => {
+    if (!tenantId) return;
+    try {
+      setDownloadingMonth(true);
+      const targetYear = date.getFullYear();
+      const targetMonth = date.getMonth();
+      const monthlyData = await reportsApi.getMonthlyReportData(
+        tenantId,
+        targetYear,
+        targetMonth
+      );
+      await exportMonthlyReportToPDF(monthlyData);
+    } catch (e: any) {
+      Alert.alert(
+        'Export Failed',
+        e.message || 'Failed to generate monthly report'
+      );
+    } finally {
+      setDownloadingMonth(false);
+    }
+  };
 
   useEffect(() => {
     if (!tenantId) return;
@@ -133,10 +166,30 @@ export default function DailyReport() {
       }
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#FF6B35" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Daily Report</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#FF6B35" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Daily Report</Text>
+        </View>
+
+        {!isStaff && (
+          <TouchableOpacity
+            style={styles.monthDownloadBtn}
+            onPress={handleDownloadMonthlyReport}
+            disabled={downloadingMonth}
+            activeOpacity={0.8}
+          >
+            {downloadingMonth ? (
+              <ActivityIndicator size="small" color="#FF6B35" />
+            ) : (
+              <>
+                <Ionicons name="document-text-outline" size={18} color="#FF6B35" />
+                <Text style={styles.monthDownloadText}>Month PDF</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       <TouchableOpacity
@@ -226,8 +279,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: '#F4F6FB',
   },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
   headerTitle: { fontSize: 22, fontWeight: '800', marginLeft: 12, color: '#111827' },
+  monthDownloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF2EC',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FFD6C2',
+    gap: 6,
+  },
+  monthDownloadText: {
+    color: '#FF6B35',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   dateCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
