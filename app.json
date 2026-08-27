@@ -2,7 +2,7 @@
   "expo": {
     "name": "ParkScan-AD",
     "slug": "ParkScan-AD",
-    "version": "1.0.2",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./src/assets/icon.png",
     "userInterfaceStyle": "light",
@@ -22,11 +22,11 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "android.permission.CAMERA"
       ],
-      "package": "com.sravansaiba.parkscanadb"
+      "package": "com.sravansaiba.parkscanad"
     },
     "web": {
       "favicon": "./src/assets/favicon.png"
