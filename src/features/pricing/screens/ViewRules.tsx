@@ -11,9 +11,9 @@ import {
   StatusBar,
   Platform,
   Dimensions,
-  SafeAreaView,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { usePricingStore, VehicleType } from '../pricingStore';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -178,7 +178,7 @@ const ViewRules: React.FC = () => {
                         />
                       </View>
                       <View style={styles.actionButtons}>
-                        <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('CreateRule', { ruleId: rule.id, vehicleType: rule.name })}>
+                        <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('CreateRule', { ruleId: rule.id, vehicleType: rule.name as VehicleType })}>
                           <Ionicons name="create-outline" size={20} color="#6366F1" />
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.iconBtn, {backgroundColor: '#FEF2F2'}]} onPress={() => deleteRule(rule.id)}>

@@ -13,9 +13,9 @@ import {
   Platform,
   Keyboard,
   TouchableWithoutFeedback,
-  SafeAreaView,
   Animated,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "../../../services/supabase";
@@ -55,25 +55,41 @@ export default function LoginScreen({ navigation }: any) {
 
       if (error) throw error;
 
-      const user = data.user;
+      const user = data?.user;
 
       if (user) {
-        const { data: appUser } = await supabase
-          .from("app_users")
-          .select("id, tenant_id, name, role")
-          .eq("id", user.id)
-          .single();
-
+        // 1. Immediately set the user with session metadata to push directly to Home screen
         setUser({
           id: user.id,
           email: user.email ?? null,
-          tenant_id: appUser?.tenant_id ?? user.user_metadata?.tenant_id ?? null,
-          name: appUser?.name ?? user.user_metadata?.name,
-          role: appUser?.role ?? user.user_metadata?.role,
+          tenant_id: user.user_metadata?.tenant_id ?? null,
+          name: user.user_metadata?.name ?? user.email?.split("@")[0] ?? "User",
+          role: user.user_metadata?.role ?? "STAFF",
         });
+
+        // 2. Refresh full app_users profile asynchronously in background
+        supabase
+          .from("app_users")
+          .select("id, tenant_id, name, role")
+          .eq("id", user.id)
+          .single()
+          .then(
+            ({ data: appUser }) => {
+              if (appUser) {
+                setUser({
+                  id: user.id,
+                  email: user.email ?? null,
+                  tenant_id: appUser.tenant_id ?? user.user_metadata?.tenant_id ?? null,
+                  name: appUser.name ?? user.user_metadata?.name ?? "User",
+                  role: appUser.role ?? user.user_metadata?.role ?? "STAFF",
+                });
+              }
+            },
+            (e) => console.warn("Background user profile fetch error:", e)
+          );
       }
     } catch (err: any) {
-      Alert.alert("Login Failed", err.message || "Invalid credentials");
+      Alert.alert("Login Failed", err?.message || "Invalid credentials");
     } finally {
       setLoading(false);
 

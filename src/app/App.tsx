@@ -5,19 +5,29 @@ import SplashScreen from "../screens/SplashScreen";
 import { useAuthStore } from "../store/authStore";
 
 export default function App() {
-  const [isLoading, setIsLoading] = useState(true);
-
-  const init = useAuthStore((state) => state.init);
+  const [isSplashTimerDone, setIsSplashTimerDone] = useState(false);
+  const [isTimeoutReached, setIsTimeoutReached] = useState(false);
+  const { loading: isAuthLoading, init } = useAuthStore();
 
   useEffect(() => {
     init();
+
+    // Fallback safety timeout: ensure the app never stays stuck on splash indefinitely
+    const safetyTimer = setTimeout(() => {
+      setIsTimeoutReached(true);
+    }, 5000);
+
+    return () => clearTimeout(safetyTimer);
   }, []);
 
   const handleSplashFinish = () => {
-    setIsLoading(false);
+    setIsSplashTimerDone(true);
   };
 
-  if (isLoading) {
+  // Keep splash screen until minimum splash animation is done AND auth store is ready
+  const isAppReady = (isSplashTimerDone && !isAuthLoading) || isTimeoutReached;
+
+  if (!isAppReady) {
     return <SplashScreen onFinish={handleSplashFinish} />;
   }
 

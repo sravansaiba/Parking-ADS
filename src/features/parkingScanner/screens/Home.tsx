@@ -10,6 +10,7 @@ import {
   Platform,
   RefreshControl,
   AppState,
+  Modal,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useAuthStore } from "../../../store/authStore";
@@ -87,8 +88,8 @@ export default function HomeScreen() {
   const handleLogout = () => setShowLogoutModal(true);
 
   const confirmLogout = async () => {
-    await useAuthStore.getState().signOut();
     setShowLogoutModal(false);
+    await useAuthStore.getState().signOut();
   };
 
   useEffect(() => {
@@ -529,7 +530,12 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {showLogoutModal && (
+      <Modal
+        visible={showLogoutModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLogoutModal(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Confirm Logout</Text>
@@ -550,7 +556,7 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
-      )}
+      </Modal>
     </ScrollView>
   );
 }

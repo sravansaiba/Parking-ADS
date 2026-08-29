@@ -129,20 +129,16 @@ const fetchAppUser = async (authUserId: string, email: string | null | undefined
       .single();
 
     if (error || !data) {
-      console.error('AuthStore: No app_user found for', authUserId, error);
+      console.warn('AuthStore: Could not fetch app_user record:', error?.message || error);
       return null;
     }
 
-    if (!data.tenant_id) {
-      console.warn('⚠️ User has no tenant_id in app_users table');
-    }
-
     return {
-      id: authUserId,
+      id: data.id,
       email: email ?? null,
       tenant_id: data.tenant_id,
-      name: data.name,
-      role: data.role,
+      name: data.name ?? 'User',
+      role: data.role ?? 'STAFF',
     };
   } catch (err) {
     console.error('AuthStore: Exception in fetchAppUser', err);
@@ -160,14 +156,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   clearError: () => set({ error: null }),
 
   signOut: async () => {
-    await supabase.auth.signOut();
-    set({ user: null, loading: false, error: null });
+    try {
+      set({ user: null, loading: false, error: null });
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((res) => setTimeout(res, 2000)),
+      ]);
+    } catch (e) {
+      console.warn("SignOut error:", e);
+    } finally {
+      set({ user: null, loading: false, error: null });
+    }
   },
 
-  // ✅ init() — call ONCE on app start in root component
   init: async () => {
-    set({ loading: true });
-
     try {
       // 1. Manage Supabase autoRefreshToken on AppState change (foreground/background)
       AppState.addEventListener('change', (state) => {
@@ -178,13 +180,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       });
 
-      // 2. Check if there's already a valid persisted session (from AsyncStorage)
-      const { data: { session } } = await supabase.auth.getSession();
+      // 2. Check if there's already a valid persisted session with a strict 2-second timeout
+      const sessionPromise = supabase.auth.getSession();
+      const sessionTimeoutPromise = new Promise<{ data: { session: any }; error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: { session: null }, error: null }), 2000)
+      );
+
+      const sessionResult = (await Promise.race([sessionPromise, sessionTimeoutPromise])) as any;
+      const session = sessionResult?.data?.session;
 
       if (session?.user) {
         const appUser = await fetchAppUser(session.user.id, session.user.email);
         if (appUser) {
-          set({ user: appUser, loading: false });
+          set({ user: appUser, loading: false, error: null });
         } else {
           // Fallback to auth session metadata if database network call fails temporarily
           const fallbackUser: AppUser = {
@@ -194,47 +202,53 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             name: session.user.user_metadata?.name ?? session.user.email?.split('@')[0] ?? 'User',
             role: session.user.user_metadata?.role ?? 'STAFF',
           };
-          set({ user: fallbackUser, loading: false });
+          set({ user: fallbackUser, loading: false, error: null });
         }
       } else {
-        set({ user: null, loading: false });
+        set({ user: null, loading: false, error: null });
       }
 
       // 3. Listen for all future auth changes — TOKEN_REFRESHED, SIGNED_IN, SIGNED_OUT, etc.
-      supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_OUT' || !session?.user) {
+      supabase.auth.onAuthStateChange(async (event, currentSession) => {
+        if (event === 'SIGNED_OUT' || !currentSession?.user) {
           set({ user: null, loading: false });
           return;
         }
 
-        if (session?.user) {
-          const appUser = await fetchAppUser(session.user.id, session.user.email);
+        if (
+          event === 'SIGNED_IN' ||
+          event === 'TOKEN_REFRESHED' ||
+          event === 'USER_UPDATED' ||
+          event === 'INITIAL_SESSION'
+        ) {
+          const currentUser = get().user;
+          const appUser = await fetchAppUser(currentSession.user.id, currentSession.user.email);
           if (appUser) {
             set({ user: appUser, loading: false });
+          } else if (currentUser && currentUser.id === currentSession.user.id) {
+            set({ loading: false });
           } else {
-            const currentUser = get().user;
-            if (!currentUser) {
-              const fallbackUser: AppUser = {
-                id: session.user.id,
-                email: session.user.email ?? null,
-                tenant_id: session.user.user_metadata?.tenant_id ?? null,
-                name: session.user.user_metadata?.name ?? session.user.email?.split('@')[0] ?? 'User',
-                role: session.user.user_metadata?.role ?? 'STAFF',
-              };
-              set({ user: fallbackUser, loading: false });
-            } else {
-              set({ loading: false });
-            }
+            const fallbackUser: AppUser = {
+              id: currentSession.user.id,
+              email: currentSession.user.email ?? null,
+              tenant_id: currentSession.user.user_metadata?.tenant_id ?? null,
+              name: currentSession.user.user_metadata?.name ?? currentSession.user.email?.split('@')[0] ?? 'User',
+              role: currentSession.user.user_metadata?.role ?? 'STAFF',
+            };
+            set({ user: fallbackUser, loading: false });
           }
         }
       });
     } catch (err: any) {
       console.error('AuthStore Initialization Error:', err);
       set({
-        error: err?.message || 'Failed to initialize application',
+        error: null,
         loading: false,
         user: null,
       });
+    } finally {
+      // Ensure loading is ALWAYS false so the app is never stuck on a spinner
+      set((state) => ({ loading: false }));
     }
   },
 }));
