@@ -42,8 +42,11 @@ export default function EndParkingForm({
 
   const [amountStr, setAmountStr] = useState<string>("");
   const [calculatedAmount, setCalculatedAmount] = useState<number>(0);
-  const [isAmountEditable, setIsAmountEditable] = useState(false);
-  const [wasAmountEdited, setWasAmountEdited] = useState(false);
+  // Commented out for Adilabad App (Editing disabled, collect as per calculation only)
+  // const [isAmountEditable, setIsAmountEditable] = useState(false);
+  // const [wasAmountEdited, setWasAmountEdited] = useState(false);
+  const isAmountEditable = false;
+  const wasAmountEdited = false;
 
   const [paymentMode, setPaymentMode] = useState<"single" | "split">("single");
   const [singlePaymentType, setSinglePaymentType] = useState<"cash" | "upi">(
@@ -86,7 +89,7 @@ export default function EndParkingForm({
 
   // ─── Auto-calculate price ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!user || !activeSession || !activeSession.vehicle_type || isAmountEditable) {
+    if (!user || !activeSession || !activeSession.vehicle_type /* || isAmountEditable */) {
       return;
     }
     const calculate = async () => {
@@ -108,7 +111,7 @@ export default function EndParkingForm({
       }
     };
     calculate();
-  }, [activeSession, endTime, user, isAmountEditable]);
+  }, [activeSession, endTime, user /* , isAmountEditable */]);
 
   // ─── Sync single received when amount or mode changes ─────────────────────
   useEffect(() => {
@@ -175,7 +178,8 @@ export default function EndParkingForm({
           return_cash: returnCash,
           original_amount: calculatedAmount > 0 ? calculatedAmount : amount,
         },
-        is_amount_edited: wasAmountEdited,
+        // is_amount_edited: wasAmountEdited,
+        is_amount_edited: false,
       });
 
       isSubmitted.current = true;
@@ -438,6 +442,8 @@ export default function EndParkingForm({
         <TextInput
           keyboardType="numeric"
           value={amountStr}
+          editable={false}
+          /*
           editable={isAmountEditable}
           onChangeText={(v) => {
             if (v === "" || /^\d*\.?\d*$/.test(v)) {
@@ -445,12 +451,16 @@ export default function EndParkingForm({
               setWasAmountEdited(true);
             }
           }}
+          */
           style={[
             styles.input,
-            !isAmountEditable && styles.inputDisabled,
+            styles.inputDisabled,
+            /* !isAmountEditable && styles.inputDisabled, */
             { flex: 1, fontWeight: "800", fontSize: 18, color: "#111827" },
           ]}
         />
+        {/* Commented out Edit Button for Adilabad App (Only collect calculated amount) */}
+        {/*
         <TouchableOpacity
           style={styles.editBtn}
           onPress={() => {
@@ -462,6 +472,7 @@ export default function EndParkingForm({
             {isAmountEditable ? "Lock" : "Edit"}
           </Text>
         </TouchableOpacity>
+        */}
       </View>
 
       {/* Action buttons */}
